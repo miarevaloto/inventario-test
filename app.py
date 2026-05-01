@@ -404,8 +404,8 @@ def vender(id):
         return redirect("/index")
 
     # 🔴 VALIDACIÓN CLAVE
-    if cantidad <= 1:
-        flash("❌ Venta inválida: la cantidad debe ser mayor a 1")
+    if cantidad <= 0:
+        flash("❌ Venta inválida: la cantidad debe ser mayor a 0")
         return redirect("/index")
 
     conn = get_db()
