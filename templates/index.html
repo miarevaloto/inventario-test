@@ -129,9 +129,7 @@
 <h3 id="titulo"></h3>
 
 <form id="formModal" method="POST">
-<input type="number" name="cantidad" min="1" required 
-       placeholder="Cantidad (>0)" 
-       oninput="validarCantidad(this)">
+<input type="number" name="cantidad" min="1" required>
 <button class="btn btn-primary">Confirmar</button>
 </form>
 
@@ -176,14 +174,6 @@ function cerrarModal(){
 function eliminar(id){
     if(confirm("¿Eliminar producto?")){
         window.location.href = "/delete/" + id;
-    }
-}
-</script>
-<script>
-function validarCantidad(input){
-    if(input.value <= 1){
-        alert("❌ Venta inválida: cantidad debe ser mayor a 1");
-        input.value = "";
     }
 }
 </script>
