@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Inventario</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+
+<div class="navbar">
+    <h2>📦 Inventario</h2>
+
+    <div>
+        <a href="/dashboard">Dashboard</a>
+        <a href="/ventas">Ventas</a>
+
+        {% if session["rol"] == "admin" %}
+            <a href="/admin">Admin</a>
+        {% endif %}
+
+        <a href="/logout">Salir</a>
+    </div>
+</div>
+{% with messages = get_flashed_messages() %}
+  {% if messages %}
+    <div class="alert">
+      {% for msg in messages %}
+        <p>{{ msg }}</p>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+<div class="card">
+    <h2>🔍 Buscar producto por ID</h2>
+
+    <form method="POST" action="/buscar_producto">
+        <input type="number" name="id" placeholder="Ingrese ID del producto" min="1" required>
+        <button>Buscar</button>
+    </form>
+</div>
+{% if producto_buscado %}
+<div class="card">
+    <h3>Resultado:</h3>
+    <p><b>ID:</b> {{producto_buscado["id"]}}</p>
+    <p><b>Nombre:</b> {{producto_buscado["nombre"]}}</p>
+    <p><b>Precio:</b> {{producto_buscado["precio"]}}</p>
+    <p><b>Cantidad:</b> {{producto_buscado["cantidad"]}}</p>
+</div>
+{% endif %}
+<div class="container">
+{% with messages = get_flashed_messages() %}
+  {% if messages %}
+    <div class="alert">
+      {% for msg in messages %}
+        <p>{{ msg }}</p>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+
+<!-- AGREGAR -->
+<div class="card">
+<h2>Agregar Producto</h2>
+
+<form method="POST" action="/add">
+
+<input name="nombre" placeholder="Nombre" required>
+
+<select id="categoria_select" onchange="usarCategoria()">
+<option value="">Seleccionar</option>
+
+{% for c in categorias %}
+<option value="{{c['categoria']}}">{{c['categoria']}}</option>
+{% endfor %}
+
+<option value="nueva">Nueva</option>
+</select>
+
+<input id="categoria_input" name="categoria" placeholder="Categoría" required>
+
+<input name="cantidad" type="number" min="1" placeholder="Cantidad" required>
+<input name="precio" type="number" step="0.01" min="1" placeholder="Precio" required>
+
+<button class="btn btn-primary">Agregar</button>
+
+</form>
+</div>
+
+<!-- TABLA -->
+<div class="card">
+<h2>Inventario</h2>
+
+<table>
+<tr>
+<th>ID</th>
+<th>Nombre</th>
+<th>Categoría</th>
+<th>Cantidad</th>
+<th>Precio</th>
+<th>Acciones</th>
+</tr>
+
+{% for p in productos %}
+<tr>
+
+<td>{{p["id"]}}</td>
+<td>{{p["nombre"]}}</td>
+<td>{{p["categoria"]}}</td>
+<td>{{p["cantidad"]}}</td>
+<td>${{p["precio"]}}</td>
+
+<td>
+<button class="btn-success btn-xs" onclick="abrirModal('sumar', {{p['id']}})">➕</button>
+<button class="btn btn-xs" onclick="abrirModal('vender', {{p['id']}})">💰</button>
+<button class="btn-danger btn-xs" onclick="eliminar({{p['id']}})">❌</button>
+</td>
+
+</tr>
+{% endfor %}
+</table>
+</div>
+
+</div>
+
+<!-- MODAL -->
+<div id="modal" class="modal">
+<div class="modal-content">
+
+<h3 id="titulo"></h3>
+
+<form id="formModal" method="POST">
+<input type="number" name="cantidad" required>
+<button class="btn btn-primary">Confirmar</button>
+</form>
+
+<button onclick="cerrarModal()" class="btn btn-danger btn-xs">Cerrar</button>
+
+</div>
+</div>
+
+<script>
+function usarCategoria(){
+    let select = document.getElementById("categoria_select");
+    let input = document.getElementById("categoria_input");
+
+    if(select.value === "nueva"){
+        input.value = "";
+        input.focus();
+    } else {
+        input.value = select.value;
+    }
+}
+
+function abrirModal(tipo, id){
+    let modal = document.getElementById("modal");
+    let form = document.getElementById("formModal");
+    let titulo = document.getElementById("titulo");
+
+    modal.style.display = "flex";
+
+    if(tipo === "sumar"){
+        titulo.innerText = "Agregar Inventario";
+        form.action = "/sumar/" + id;
+    } else {
+        titulo.innerText = "Registrar Venta";
+        form.action = "/vender/" + id;
+    }
+}
+
+function cerrarModal(){
+    document.getElementById("modal").style.display = "none";
+}
+
+function eliminar(id){
+    if(confirm("¿Eliminar producto?")){
+        window.location.href = "/delete/" + id;
+    }
+}
+</script>
+
+</body>
+</html>
