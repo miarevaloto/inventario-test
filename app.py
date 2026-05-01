@@ -385,6 +385,11 @@ def sumar(id):
     WHERE id=? AND inventario_id=?
     """, (cantidad, id, session["inventario_id"]))
 
+    cantidad = int(request.form["cantidad"])
+
+    # ❌ SIN VALIDACIÓN (error intencional)
+    nueva_cantidad = producto["cantidad"] + cantidad
+
     conn.commit()
     conn.close()
 
