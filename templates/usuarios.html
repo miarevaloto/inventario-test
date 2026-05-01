@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Usuarios</title>
+</head>
+<body>
+
+<h1>👥 Usuarios</h1>
+
+<a href="/admin">⬅ Volver</a>
+
+<table border="1">
+<tr>
+<th>ID</th>
+<th>Email</th>
+<th>Rol</th>
+<th>Inventario</th>
+</tr>
+
+{% for u in usuarios %}
+<tr>
+<td>{{u["id"]}}</td>
+<td>{{u["email"]}}</td>
+<td>{{u["rol"]}}</td>
+<td>{{u["inventario_id"]}}</td>
+</tr>
+{% endfor %}
+</table>
+
+</body>
+</html>

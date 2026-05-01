@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Admin</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+
+<div class="navbar">
+    <h2>⚙️ Panel Admin</h2>
+    <div>
+        <a href="/logout">Salir</a>
+    </div>
+</div>
+
+<div class="container">
+
+<!-- USUARIOS -->
+<div class="card">
+<h2>👥 Usuarios</h2>
+
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Email</th>
+<th>Rol</th>
+<th>Inventario</th>
+<th>Asignar</th>
+
+</tr>
+</thead>
+
+<tbody>
+{% for u in usuarios %}
+<tr>
+<td>{{u["id"]}}</td>
+<td>{{u["email"]}}</td>
+<td>{{u["rol"]}}</td>
+<td>{{u["inventario_id"]}}</td>
+
+<td>
+<form method="POST" action="/asignar">
+<input type="hidden" name="user_id" value="{{u['id']}}">
+
+<select name="inventario_id">
+{% for inv in inventarios %}
+<option value="{{inv['id']}}">
+📦 {{inv['nombre']}} (ID: {{inv['id']}})
+</option>
+{% endfor %}
+</select>
+
+<button class="btn btn-xs">Asignar</button>
+</form>
+</td>
+<td>
+    <a href="/eliminar_usuario/{{u.id}}" 
+       onclick="return confirm('¿Seguro que deseas eliminar este usuario?')">
+       <button class="btn-danger">Eliminar</button>
+    </a>
+</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+
+<!-- CREAR USUARIO -->
+<div class="card">
+<h2>➕ Crear Usuario</h2>
+
+<form method="POST" action="/crear_usuario_admin">
+<input type="email" name="email" required>
+<input type="password" name="password" required>
+
+<select name="rol">
+<option value="usuario">Usuario</option>
+<option value="admin">Admin</option>
+</select>
+
+<select name="inventario_id">
+{% for inv in inventarios %}
+<option value="{{inv['id']}}">
+{{inv['nombre']}}
+</option>
+{% endfor %}
+</select>
+
+<button class="btn btn-primary">Crear Usuario</button>
+</form>
+</div>
+
+<!-- INVENTARIOS -->
+<div class="card">
+<h2>📦 Inventarios Disponibles</h2>
+
+<table>
+<tr>
+<th>ID</th>
+<th>Nombre</th>
+</tr>
+
+{% for inv in inventarios %}
+<tr>
+<td>{{inv["id"]}}</td>
+<td>{{inv["nombre"]}}</td>
+</tr>
+{% endfor %}
+</table>
+</div>
+
+<!-- CREAR INVENTARIO -->
+<div class="card">
+<h2>➕ Crear Inventario</h2>
+
+<form method="POST" action="/crear_inventario">
+<input type="text" name="nombre" placeholder="Nombre del inventario" required>
+<button class="btn btn-success">Crear Inventario</button>
+</form>
+
+</div>
+
+</div>
+
+</body>
+</html>

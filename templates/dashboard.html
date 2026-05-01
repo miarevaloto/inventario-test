@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Dashboard</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body>
+
+<!-- ================= NAVBAR ================= -->
+<div class="navbar">
+    <h2>📊 Dashboard</h2>
+
+    <div>
+        <a href="/index">📦 Inventario</a>
+
+        {% if session["rol"] == "admin" %}
+            <a href="/admin">⚙️ Admin</a>
+        {% endif %}
+        <a href="/ventas">Ventas</a>
+        <a href="/logout">🚪 Salir</a>
+    </div>
+</div>
+
+
+<!-- ================= CONTENIDO ================= -->
+<div class="container">
+
+    <!-- KPI -->
+    <div class="dashboard">
+
+        <div class="card-metric">
+            <h3>Total Productos</h3>
+            <p>{{total_productos}}</p>
+        </div>
+
+        <div class="card-metric">
+            <h3>Stock Disponible</h3>
+            <p>{{stock_total}}</p>
+        </div>
+
+        <div class="card-metric">
+            <h3>Ventas Totales</h3>
+            <h3>$ {{ "{:,.2f}".format(ventas_total) }}</h3>
+        </div>
+
+    </div>
+
+
+    <!-- GRÁFICA -->
+    <div class="card">
+        <h2>📈 Productos más vendidos</h2>
+        <canvas id="grafica"></canvas>
+    </div>
+
+
+    <!-- TABLA TOP -->
+    <div class="card">
+        <h2>🏆 Top Productos</h2>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Producto</th>
+                    <th>Ventas</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                {% for p in top_productos %}
+                <tr>
+                    <td>{{p.nombre}}</td>
+                    <td>{{p.vendidos}}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+
+    <!-- BOTÓN PDF -->
+    <div style="text-align:center; margin:20px;">
+        <a href="/reporte_pdf" class="btn btn-success">📄 Descargar PDF</a>
+    </div>
+
+</div>
+
+
+<!-- ================= SCRIPT GRAFICA ================= -->
+<script>
+const ctx = document.getElementById('grafica');
+
+new Chart(ctx, {
+    type: 'bar',
+    data: {
+        labels: [{% for p in top_productos %}"{{p['nombre']}}",{% endfor %}],
+        datasets: [{
+            label: 'Ventas',
+            data: [{% for p in top_productos %}{{p['vendidos']}},{% endfor %}],
+            borderWidth: 1
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            legend: {
+                display: false
+            }
+        }
+    }
+});
+</script>
+
+</body>
+</html>

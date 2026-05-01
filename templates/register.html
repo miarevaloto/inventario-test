@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Registro</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+</head>
+
+<body class="login-body">
+
+<div class="login-container">
+
+    <!-- LOGO -->
+    <img src="/static/logo.png" class="login-logo">
+
+    <h2>📝 Crear Cuenta</h2>
+
+    <input id="email" placeholder="Correo">
+    <input id="password" type="password" placeholder="Contraseña">
+
+    <button onclick="register()" class="btn-success">Registrarse</button>
+
+    <p>¿Ya tienes cuenta?</p>
+
+    <button onclick="window.location='/login'" class="btn-primary">
+        Volver al login
+    </button>
+</div>
+
+<script>
+function register(){
+    axios.post("/register", {
+        email: email.value,
+        password: password.value
+    }).then(res=>{
+        if(res.data.ok){
+            alert("Usuario creado correctamente ✅");
+            window.location="/login";
+        } else {
+            alert(res.data.msg);
+        }
+    });
+}
+</script>
+
+</body>
+</html>
