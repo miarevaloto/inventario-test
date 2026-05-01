@@ -34,7 +34,7 @@
     <h2>🔍 Buscar producto por ID</h2>
 
     <form method="POST" action="/buscar_producto">
-        <input type="number" name="id" placeholder="Ingrese ID del producto" min="1" required>
+        <input type="number" name="id" placeholder="Ingrese ID del producto" min="0" required>
         <button>Buscar</button>
     </form>
 </div>
@@ -129,7 +129,9 @@
 <h3 id="titulo"></h3>
 
 <form id="formModal" method="POST">
-<input type="number" name="cantidad" required>
+<input type="number" name="cantidad" min="1" required 
+       placeholder="Cantidad (>0)" 
+       oninput="validarCantidad(this)">
 <button class="btn btn-primary">Confirmar</button>
 </form>
 
@@ -174,6 +176,14 @@ function cerrarModal(){
 function eliminar(id){
     if(confirm("¿Eliminar producto?")){
         window.location.href = "/delete/" + id;
+    }
+}
+</script>
+<script>
+function validarCantidad(input){
+    if(input.value <= 0){
+        alert("❌ Venta inválida: cantidad debe ser mayor a 0");
+        input.value = "";
     }
 }
 </script>

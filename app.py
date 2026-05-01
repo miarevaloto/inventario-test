@@ -394,28 +394,60 @@ def sumar(id):
 # ================= VENDER =================
 @app.route("/vender/<int:id>", methods=["POST"])
 def vender(id):
-    cantidad = int(request.form["cantidad"])
+    if "user_id" not in session:
+        return redirect("/login")
+
+    try:
+        cantidad = int(request.form["cantidad"])
+    except:
+        flash("❌ Venta inválida: datos incorrectos")
+        return redirect("/index")
+
+    # 🔴 VALIDACIÓN CLAVE
+    if cantidad <= 1:
+        flash("❌ Venta inválida: la cantidad debe ser mayor a 1")
+        return redirect("/index")
 
     conn = get_db()
     cur = conn.cursor()
 
-    cur.execute("SELECT cantidad FROM productos WHERE id=?", (id,))
-    stock = cur.fetchone()
-
-    if stock and stock["cantidad"] >= cantidad:
-        cur.execute("INSERT INTO ventas (producto_id, cantidad) VALUES (?,?)", (id, cantidad))
-
-        cur.execute("""
-        UPDATE productos
-        SET cantidad = cantidad - ?, vendidos = vendidos + ?
+    # Obtener producto
+    cur.execute("""
+        SELECT * FROM productos
         WHERE id=? AND inventario_id=?
-        """, (cantidad, cantidad, id, session["inventario_id"]))
+    """, (id, session["inventario_id"]))
+    producto = cur.fetchone()
 
-        conn.commit()
+    if not producto:
+        flash("❌ Producto no válido")
+        conn.close()
+        return redirect("/index")
 
+    # 🔴 STOCK INSUFICIENTE
+    if cantidad > producto["cantidad"]:
+        flash("❌ Stock insuficiente")
+        conn.close()
+        return redirect("/index")
+
+    # ✅ ACTUALIZAR STOCK
+    nueva_cantidad = producto["cantidad"] - cantidad
+
+    cur.execute("""
+        UPDATE productos SET cantidad=?
+        WHERE id=?
+    """, (nueva_cantidad, id))
+
+    # ✅ REGISTRAR VENTA
+    cur.execute("""
+        INSERT INTO ventas (producto_id, cantidad)
+        VALUES (?, ?)
+    """, (id, cantidad))
+
+    conn.commit()
     conn.close()
-    return redirect("/index")
 
+    flash("✅ Venta realizada correctamente")
+    return redirect("/index")
 
 # ================= ELIMINAR =================
 @app.route("/delete/<int:id>")
