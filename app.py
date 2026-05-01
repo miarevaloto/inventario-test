@@ -210,6 +210,52 @@ def buscar_producto():
 
     return render_template("index.html", productos=productos, producto_buscado=producto)
 
+@app.route("/actualizar_stock", methods=["POST"])
+def actualizar_stock():
+    if "user_id" not in session:
+        return redirect("/login")
+
+    try:
+        producto_id = int(request.form["producto_id"])
+        cantidad = int(request.form["cantidad"])
+    except:
+        flash("❌ Dato inválido")
+        return redirect("/index")
+
+    # 🔴 VALIDACIÓN CLAVE
+    if cantidad <= 0:
+        flash("❌ La cantidad debe ser mayor a 0")
+        return redirect("/index")
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    # Obtener producto
+    cur.execute("""
+        SELECT * FROM productos
+        WHERE id=? AND inventario_id=?
+    """, (producto_id, session["inventario_id"]))
+    producto = cur.fetchone()
+
+    if not producto:
+        flash("❌ Producto no válido")
+        conn.close()
+        return redirect("/index")
+
+    # ✅ ACTUALIZAR STOCK
+    nueva_cantidad = producto["cantidad"] + cantidad
+
+    cur.execute("""
+        UPDATE productos SET cantidad=?
+        WHERE id=?
+    """, (nueva_cantidad, producto_id))
+
+    conn.commit()
+    conn.close()
+
+    flash("✅ Stock actualizado correctamente")
+    return redirect("/index")
+
 # ================= DASHBOARD =================
 @app.route("/dashboard")
 def dashboard():
@@ -307,8 +353,8 @@ def venta():
         flash("❌ Venta inválida: datos incorrectos")
         return redirect("/ventas")
 
-    if cantidad <= 0:
-        flash("❌ Venta inválida: cantidad debe ser mayor a 0")
+    if cantidad <= 1:
+        flash("❌ Venta inválida: cantidad debe ser mayor a 1")
         return redirect("/ventas")
 
     conn = get_db()
@@ -529,8 +575,6 @@ def logout():
 
 
 # ================= MAIN =================
-import os
-
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    init_db()
+    app.run(debug=True, port=5000)
