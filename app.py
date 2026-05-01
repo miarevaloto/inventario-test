@@ -307,8 +307,8 @@ def venta():
         flash("❌ Venta inválida: datos incorrectos")
         return redirect("/ventas")
 
-    if cantidad <= 1:
-        flash("❌ Venta inválida: cantidad debe ser mayor a 1")
+    if cantidad <= 0:
+        flash("❌ Venta inválida: cantidad debe ser mayor a 0")
         return redirect("/ventas")
 
     conn = get_db()
