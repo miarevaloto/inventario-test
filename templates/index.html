@@ -181,8 +181,8 @@ function eliminar(id){
 </script>
 <script>
 function validarCantidad(input){
-    if(input.value <= 0){
-        alert("❌ Venta inválida: cantidad debe ser mayor a 0");
+    if(input.value <= 1){
+        alert("❌ Venta inválida: cantidad debe ser mayor a 1");
         input.value = "";
     }
 }
