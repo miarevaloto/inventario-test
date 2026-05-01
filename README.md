@@ -207,7 +207,7 @@ Start: gunicorn app:app
 
 ## 👨‍💻 Autor
 
-Proyecto desarrollado como parte de la asignatura **Pruebas de Software**
+Proyecto desarrollado para la asignatura **Pruebas de Software**
 
 ---
 
