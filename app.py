@@ -1,8 +1,7 @@
-from flask import Flask, render_template, request, redirect, session, flash
+from flask import Flask, render_template, request, redirect, session, flash, send_file
 from reportlab.platypus import SimpleDocTemplate, Table
-from flask import send_file
-import io
 import sqlite3
+import io
 import os
 
 app = Flask(__name__)
@@ -36,7 +35,6 @@ def init_db():
 @app.route("/", methods=["GET","POST"])
 @app.route("/login", methods=["GET","POST"])
 def login():
-
     if request.method == "POST":
 
         if request.is_json:
@@ -59,9 +57,8 @@ def login():
             session["rol"] = user["rol"]
             session["inventario_id"] = user["inventario_id"]
 
-            redirect_url = "/admin" if user["rol"] == "admin" else "/index"
-
-            return {"ok": True, "redirect": redirect_url} if request.is_json else redirect(redirect_url)
+            return {"ok": True, "redirect": "/admin" if user["rol"] == "admin" else "/index"} \
+                if request.is_json else redirect("/admin" if user["rol"] == "admin" else "/index")
 
         return {"ok": False, "msg": "Credenciales incorrectas"}
 
@@ -71,7 +68,6 @@ def login():
 # ================= REGISTER =================
 @app.route("/register", methods=["GET","POST"])
 def register():
-
     if request.method == "POST":
 
         if request.is_json:
@@ -106,13 +102,12 @@ def register():
     return render_template("register.html")
 
 
-# ================= INVENTARIO =================
+# ================= INDEX =================
 @app.route("/index")
 def index():
     if "user_id" not in session:
         return redirect("/login")
 
-    # 🔥 evitar que admin entre aquí
     if session.get("rol") == "admin":
         return redirect("/admin")
 
@@ -170,9 +165,6 @@ def agregar_producto():
     if "user_id" not in session:
         return redirect("/login")
 
-    nombre = request.form["nombre"]
-    categoria = request.form["categoria"]
-
     try:
         precio = float(request.form["precio"])
         cantidad = int(request.form["cantidad"])
@@ -190,7 +182,13 @@ def agregar_producto():
     cur.execute("""
         INSERT INTO productos (nombre, categoria, precio, cantidad, inventario_id)
         VALUES (?, ?, ?, ?, ?)
-    """, (nombre, categoria, precio, cantidad, session["inventario_id"]))
+    """, (
+        request.form["nombre"],
+        request.form["categoria"],
+        precio,
+        cantidad,
+        session["inventario_id"]
+    ))
 
     conn.commit()
     conn.close()
@@ -199,7 +197,7 @@ def agregar_producto():
     return redirect("/index")
 
 
-# ================= SUMAR =================
+# ================= SUMAR STOCK =================
 @app.route("/sumar/<int:id>", methods=["POST"])
 def sumar(id):
     if "user_id" not in session:
@@ -231,7 +229,7 @@ def sumar(id):
     return redirect("/index")
 
 
-# ================= VENDER =================
+# ================= VENDER DESDE INDEX =================
 @app.route("/vender/<int:id>", methods=["POST"])
 def vender(id):
     if "user_id" not in session:
@@ -268,21 +266,68 @@ def vender(id):
     return redirect("/index")
 
 
-# ================= DELETE =================
-@app.route("/delete/<int:id>")
-def delete(id):
+# ================= VENTAS =================
+@app.route("/ventas")
+def ventas():
     if "user_id" not in session:
         return redirect("/login")
 
     conn = get_db()
     cur = conn.cursor()
 
-    cur.execute("DELETE FROM productos WHERE id=? AND inventario_id=?", (id, session["inventario_id"]))
+    cur.execute("SELECT * FROM productos WHERE inventario_id=?", (session["inventario_id"],))
+    productos = cur.fetchall()
+
+    cur.execute("""
+        SELECT v.id, p.nombre as producto, v.cantidad
+        FROM ventas v
+        JOIN productos p ON v.producto_id = p.id
+        WHERE p.inventario_id=?
+        ORDER BY v.id DESC
+    """, (session["inventario_id"],))
+    ventas = cur.fetchall()
+
+    conn.close()
+
+    return render_template("ventas.html", productos=productos, ventas=ventas)
+
+
+# ================= REGISTRAR VENTA =================
+@app.route("/venta", methods=["POST"])
+def venta():
+    if "user_id" not in session:
+        return redirect("/login")
+
+    try:
+        producto_id = int(request.form["producto_id"])
+        cantidad = int(request.form["cantidad"])
+    except:
+        flash("❌ Datos inválidos")
+        return redirect("/ventas")
+
+    if cantidad <= 0:
+        flash("❌ Cantidad inválida")
+        return redirect("/ventas")
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("SELECT * FROM productos WHERE id=? AND inventario_id=?", (producto_id, session["inventario_id"]))
+    producto = cur.fetchone()
+
+    if not producto or cantidad > producto["cantidad"]:
+        conn.close()
+        flash("❌ Error en venta")
+        return redirect("/ventas")
+
+    cur.execute("UPDATE productos SET cantidad = cantidad - ? WHERE id=?", (cantidad, producto_id))
+    cur.execute("INSERT INTO ventas (producto_id, cantidad) VALUES (?, ?)", (producto_id, cantidad))
 
     conn.commit()
     conn.close()
 
-    return redirect("/index")
+    flash("✅ Venta registrada")
+    return redirect("/ventas")
 
 
 # ================= DASHBOARD =================
@@ -308,12 +353,24 @@ def dashboard():
     """, (session["inventario_id"],))
     ventas_total = cur.fetchone()["ventas"] or 0
 
+    cur.execute("""
+    SELECT p.nombre, SUM(v.cantidad) as vendidos
+    FROM ventas v
+    JOIN productos p ON v.producto_id = p.id
+    WHERE p.inventario_id=?
+    GROUP BY p.id
+    ORDER BY vendidos DESC
+    LIMIT 5
+    """, (session["inventario_id"],))
+    top_productos = cur.fetchall()
+
     conn.close()
 
     return render_template("dashboard.html",
         total_productos=total_productos,
         stock_total=stock_total,
-        ventas_total=ventas_total
+        ventas_total=ventas_total,
+        top_productos=top_productos
     )
 
 
@@ -340,6 +397,68 @@ def admin():
     return render_template("admin.html", usuarios=usuarios, inventarios=inventarios)
 
 
+# ================= ELIMINAR USUARIO =================
+@app.route("/eliminar_usuario/<int:id>")
+def eliminar_usuario(id):
+    if "user_id" not in session or session.get("rol") != "admin":
+        return redirect("/login")
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    if id == session["user_id"]:
+        flash("❌ No puedes eliminarte")
+        conn.close()
+        return redirect("/admin")
+
+    cur.execute("SELECT inventario_id FROM usuarios WHERE id=?", (id,))
+    user = cur.fetchone()
+
+    if user:
+        cur.execute("DELETE FROM productos WHERE inventario_id=?", (user["inventario_id"],))
+        cur.execute("DELETE FROM inventarios WHERE id=?", (user["inventario_id"],))
+
+    cur.execute("DELETE FROM usuarios WHERE id=?", (id,))
+
+    conn.commit()
+    conn.close()
+
+    return redirect("/admin")
+
+
+# ================= REPORTE PDF =================
+@app.route("/reporte_pdf")
+def reporte_pdf():
+    if "user_id" not in session:
+        return redirect("/login")
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer)
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+    SELECT nombre, categoria, cantidad, precio
+    FROM productos
+    WHERE inventario_id=?
+    """, (session["inventario_id"],))
+
+    data = [["Nombre", "Categoría", "Cantidad", "Precio"]]
+
+    for row in cur.fetchall():
+        data.append([row["nombre"], row["categoria"], row["cantidad"], row["precio"]])
+
+    conn.close()
+
+    table = Table(data)
+    doc.build([table])
+
+    buffer.seek(0)
+
+    return send_file(buffer, as_attachment=True, download_name="reporte.pdf", mimetype='application/pdf')
+
+
 # ================= LOGOUT =================
 @app.route("/logout")
 def logout():
@@ -349,6 +468,6 @@ def logout():
 
 # ================= MAIN =================
 if __name__ == "__main__":
-    init_db()  # 🔥 importante
+    init_db()
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
