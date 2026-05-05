@@ -1,0 +1,169 @@
+/* ================= RESET ================= */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* ================= BODY ================= */
+body {
+    background: #f4f6f9;
+}
+
+/* ================= NAVBAR ================= */
+.navbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #1f2937;
+    color: white;
+    padding: 15px 30px;
+}
+
+.navbar h2 {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.navbar a {
+    color: white;
+    text-decoration: none;
+    margin-left: 15px;
+    font-weight: 500;
+}
+
+.navbar a:hover {
+    text-decoration: underline;
+}
+
+/* 🔴 BOTÓN SALIR (MEJORADO PARA TESTING) */
+#btnLogout {
+    margin-left: 20px;
+    padding: 8px 14px;
+    background: #ef4444;
+    border-radius: 8px;
+    font-weight: bold;
+    transition: all 0.2s ease;
+    color: white;
+}
+
+#btnLogout:hover {
+    background: #dc2626;
+    transform: scale(1.05);
+}
+
+/* ================= CONTENEDOR ================= */
+.container {
+    padding: 20px;
+}
+
+/* ================= CARDS ================= */
+.card {
+    background: white;
+    padding: 20px;
+    margin: 20px 0;
+    border-radius: 12px;
+    box-shadow: 0px 4px 15px rgba(0,0,0,0.08);
+}
+
+/* ================= FORM ================= */
+.card input,
+.card select {
+    width: 100%;
+    padding: 10px;
+    margin: 8px 0;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+}
+
+/* ================= BOTONES ================= */
+.btn {
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.btn-primary {
+    background: #3b82f6;
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #2563eb;
+}
+
+.btn-success {
+    background: #10b981;
+    color: white;
+}
+
+.btn-success:hover {
+    background: #059669;
+}
+
+.btn-danger {
+    background: #ef4444;
+    color: white;
+}
+
+.btn-danger:hover {
+    background: #dc2626;
+}
+
+.btn-xs {
+    padding: 4px 8px;
+    font-size: 12px;
+}
+
+/* ================= TABLAS ================= */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+    background: white;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0px 4px 15px rgba(0,0,0,0.08);
+}
+
+table thead {
+    background: #1f2937;
+    color: white;
+}
+
+table th, table td {
+    padding: 12px;
+    text-align: center;
+}
+
+table tr:nth-child(even) {
+    background: #f9fafb;
+}
+
+table tr:hover {
+    background: #e5e7eb;
+}
+
+/* ================= ALERTAS ================= */
+.alert {
+    background: #fde68a;
+    padding: 10px;
+    margin: 10px;
+    border-radius: 8px;
+}
+
+/* ================= RESPONSIVE ================= */
+@media (max-width: 768px) {
+    .navbar {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    table {
+        font-size: 12px;
+    }
+}
