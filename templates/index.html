@@ -3,6 +3,39 @@
 <head>
     <title>Inventario</title>
     <link rel="stylesheet" href="/static/style.css">
+
+    <script>
+        function toggleNuevaCategoria() {
+            const select = document.getElementById("categoria");
+            const nueva = document.getElementById("nueva_categoria");
+
+            if (select.value === "nueva") {
+                nueva.style.display = "block";
+                nueva.required = true;
+            } else {
+                nueva.style.display = "none";
+                nueva.required = false;
+            }
+        }
+
+        function abrirModal(tipo, id, nombre) {
+            document.getElementById("modal").style.display = "flex";
+
+            if (tipo === "sumar") {
+                document.getElementById("tituloModal").innerText = "➕ Agregar Stock";
+                document.getElementById("formModal").action = "/sumar/" + id;
+            } else {
+                document.getElementById("tituloModal").innerText = "💰 Vender Producto";
+                document.getElementById("formModal").action = "/vender/" + id;
+            }
+
+            document.getElementById("productoNombre").innerText = nombre;
+        }
+
+        function cerrarModal() {
+            document.getElementById("modal").style.display = "none";
+        }
+    </script>
 </head>
 
 <body>
@@ -18,13 +51,13 @@
             <a href="/admin">Admin</a>
         {% endif %}
 
-        <a href="/logout" id="btnLogout" class="btn btn-danger">🚪 Salir</a>
+        <a href="/logout" class="btn btn-danger">🚪 Salir</a>
     </div>
 </div>
 
 <div class="container">
 
-<!-- MENSAJES FLASH -->
+<!-- MENSAJES -->
 {% with messages = get_flashed_messages() %}
   {% if messages %}
     <div class="card">
@@ -35,39 +68,34 @@
   {% endif %}
 {% endwith %}
 
-<!-- BUSCAR -->
-<div class="card">
-    <h2>🔍 Buscar producto por ID</h2>
-    <form method="POST" action="/buscar_producto">
-        <input type="number" name="id" placeholder="Ingrese ID del producto" required>
-        <button class="btn btn-primary">Buscar</button>
-    </form>
-</div>
-
-<!-- AGREGAR -->
+<!-- AGREGAR PRODUCTO -->
 <div class="card">
     <h2>Agregar Producto</h2>
 
     <form method="POST" action="/add">
+
         <input name="nombre" placeholder="Nombre" required>
-        <input name="categoria" placeholder="Categoría" required>
+
+        <!-- 🔥 CATEGORÍA (CORREGIDO AQUÍ) -->
+        <select name="categoria_select" id="categoria" onchange="toggleNuevaCategoria()" required>
+            <option value="">Seleccione categoría</option>
+
+            {% for c in categorias %}
+                <option value="{{ c['categoria'] }}">{{ c["categoria"] }}</option>
+            {% endfor %}
+
+            <option value="nueva">➕ Nueva categoría</option>
+        </select>
+
+        <input id="nueva_categoria" name="nueva_categoria"
+               placeholder="Nueva categoría"
+               style="display:none;">
+
         <input name="cantidad" type="number" min="1" placeholder="Cantidad" required>
         <input name="precio" type="number" step="0.01" min="1" placeholder="Precio" required>
 
         <button class="btn btn-primary">Agregar</button>
     </form>
-</div>
-
-<!-- CATEGORÍAS -->
-<div class="card">
-    <h2>📂 Categorías</h2>
-    <ul>
-        {% for c in categorias %}
-            <li>{{ c["categoria"] }}</li>
-        {% else %}
-            <li>No hay categorías</li>
-        {% endfor %}
-    </ul>
 </div>
 
 <!-- TABLA -->
@@ -93,21 +121,11 @@
             <td>${{ p["precio"] }}</td>
 
             <td>
-                <!-- SUMAR -->
-                <form action="/sumar/{{p['id']}}" method="POST" style="display:inline;">
-                    <input type="number" name="cantidad" value="1" min="1" style="width:50px;">
-                    <button class="btn-success btn-xs">➕</button>
-                </form>
+                <button onclick="abrirModal('sumar', {{p['id']}}, '{{p['nombre']}}')" class="btn-success btn-xs">➕</button>
+                <button onclick="abrirModal('vender', {{p['id']}}, '{{p['nombre']}}')" class="btn btn-xs">💰</button>
 
-                <!-- VENDER -->
-                <form action="/vender/{{p['id']}}" method="POST" style="display:inline;">
-                    <input type="number" name="cantidad" value="1" min="1" style="width:50px;">
-                    <button class="btn btn-xs">💰</button>
-                </form>
-
-                <!-- ELIMINAR -->
                 <a href="/delete/{{p['id']}}" class="btn-danger btn-xs"
-                   onclick="return confirm('¿Eliminar este producto?')">❌</a>
+                   onclick="return confirm('¿Eliminar producto?')">❌</a>
             </td>
         </tr>
         {% else %}
@@ -118,6 +136,23 @@
     </table>
 </div>
 
+</div>
+
+<!-- MODAL -->
+<div id="modal" class="modal">
+    <div class="modal-content">
+
+        <span class="close" onclick="cerrarModal()">&times;</span>
+
+        <h2 id="tituloModal"></h2>
+        <p id="productoNombre"></p>
+
+        <form id="formModal" method="POST">
+            <input type="number" name="cantidad" min="1" placeholder="Cantidad" required>
+            <button class="btn btn-primary">Confirmar</button>
+        </form>
+
+    </div>
 </div>
 
 </body>
