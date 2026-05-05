@@ -35,6 +35,14 @@
         function cerrarModal() {
             document.getElementById("modal").style.display = "none";
         }
+
+        // cerrar haciendo click fuera
+        window.onclick = function(event) {
+            const modal = document.getElementById("modal");
+            if (event.target === modal) {
+                cerrarModal();
+            }
+        }
     </script>
 </head>
 
@@ -68,6 +76,27 @@
   {% endif %}
 {% endwith %}
 
+<!-- 🔍 BUSCAR PRODUCTO -->
+<div class="card">
+    <h2>🔍 Buscar producto por ID</h2>
+
+    <form method="POST" action="/buscar_producto">
+        <input type="number" name="id" placeholder="Ingrese ID del producto" required>
+        <button class="btn btn-primary">Buscar</button>
+    </form>
+</div>
+
+<!-- RESULTADO BUSQUEDA -->
+{% if producto_buscado %}
+<div class="card">
+    <h2>Resultado</h2>
+    <p><strong>Nombre:</strong> {{ producto_buscado["nombre"] }}</p>
+    <p><strong>Categoría:</strong> {{ producto_buscado["categoria"] }}</p>
+    <p><strong>Cantidad:</strong> {{ producto_buscado["cantidad"] }}</p>
+    <p><strong>Precio:</strong> ${{ producto_buscado["precio"] }}</p>
+</div>
+{% endif %}
+
 <!-- AGREGAR PRODUCTO -->
 <div class="card">
     <h2>Agregar Producto</h2>
@@ -76,7 +105,7 @@
 
         <input name="nombre" placeholder="Nombre" required>
 
-        <!-- 🔥 CATEGORÍA (CORREGIDO AQUÍ) -->
+        <!-- CATEGORÍA -->
         <select name="categoria_select" id="categoria" onchange="toggleNuevaCategoria()" required>
             <option value="">Seleccione categoría</option>
 
@@ -98,7 +127,7 @@
     </form>
 </div>
 
-<!-- TABLA -->
+<!-- TABLA INVENTARIO -->
 <div class="card">
     <h2>Inventario</h2>
 
@@ -149,7 +178,11 @@
 
         <form id="formModal" method="POST">
             <input type="number" name="cantidad" min="1" placeholder="Cantidad" required>
-            <button class="btn btn-primary">Confirmar</button>
+
+            <div style="margin-top:10px;">
+                <button type="submit" class="btn btn-primary">Confirmar</button>
+                <button type="button" onclick="cerrarModal()" class="btn btn-secondary">Cancelar</button>
+            </div>
         </form>
 
     </div>
