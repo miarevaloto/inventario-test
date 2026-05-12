@@ -87,120 +87,57 @@ def init_db():
 
 
 # ================= LOGIN =================
-@app.route("/", methods=["GET", "POST"])
-@app.route("/login", methods=["GET", "POST"])
+@app.route("/", methods=["GET","POST"])
+@app.route("/login", methods=["GET","POST"])
 def login():
-    print(f"📝 Login request - Method: {request.method}", file=sys.stderr)
-    
     if request.method == "POST":
-        try:
-            if request.is_json:
-                data = request.get_json()
-                email = data.get("email")
-                password = data.get("password")
-                print(f"📝 JSON data - Email: {email}", file=sys.stderr)
-            else:
-                email = request.form.get("email")
-                password = request.form.get("password")
-                print(f"📝 Form data - Email: {email}", file=sys.stderr)
-            
-            if not email or not password:
-                return jsonify({"ok": False, "msg": "Correo y contraseña requeridos"})
-            
-            conn = get_db()
-            cur = conn.cursor()
-            
-            # Buscar usuario
-            cur.execute("SELECT * FROM usuarios WHERE email=?", (email,))
-            user = cur.fetchone()
-            
-            autenticado = False
-            mensaje_error = "Credenciales incorrectas"
-            
-            if user:
-                print(f"📝 Usuario encontrado: {user['email']}", file=sys.stderr)
-                if user["email"] == "test@email.com":
-                    autenticado = True
-                elif user["password"] == password:
-                    autenticado = True
-                else:
-                    mensaje_error = "Contraseña incorrecta"
-            else:
-                mensaje_error = "Usuario no encontrado"
-                print(f"❌ Usuario no encontrado: {email}", file=sys.stderr)
-            
-            conn.close()
-            
-            if autenticado:
-                session["user_id"] = user["id"]
-                session["rol"] = user["rol"]
-                session["inventario_id"] = user["inventario_id"]
-                session["email"] = user["email"]
-                session["nombre"] = user.get("nombre", user["email"])
-                
-                redirect_url = "/admin" if user["rol"] == "admin" else "/index"
-                print(f"✅ Login exitoso - Redirigiendo a: {redirect_url}", file=sys.stderr)
-                return jsonify({"ok": True, "redirect": redirect_url})
-            
-            print(f"❌ Login fallido: {mensaje_error}", file=sys.stderr)
-            return jsonify({"ok": False, "msg": mensaje_error})
-            
-        except Exception as e:
-            print(f"❌ Error en login: {str(e)}", file=sys.stderr)
-            return jsonify({"ok": False, "msg": f"Error del servidor: {str(e)}"})
-    
+        email = request.form.get("email")
+        password = request.form.get("password")
+
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM usuarios WHERE email=?", (email,))
+        user = cur.fetchone()
+        conn.close()
+
+        if user and (user["password"] == password or user["email"]=="test@email.com"):
+            session["user_id"] = user["id"]
+            session["rol"] = user["rol"]
+            session["inventario_id"] = user["inventario_id"]
+            session["nombre"] = user["nombre"] or user["email"]
+            return redirect("/admin" if user["rol"]=="admin" else "/index")
+
+        flash("❌ Credenciales incorrectas")
+        return redirect("/login")
+
     return render_template("login.html")
 
 
 # ================= REGISTER =================
-@app.route("/register", methods=["GET", "POST"])
+@app.route("/register", methods=["GET","POST"])
 def register():
-    print(f"📝 Register request - Method: {request.method}", file=sys.stderr)
-    
     if request.method == "POST":
-        try:
-            if request.is_json:
-                data = request.get_json()
-                email = data.get("email")
-                password = data.get("password")
-            else:
-                email = request.form.get("email")
-                password = request.form.get("password")
-            
-            if not email or not password:
-                return jsonify({"ok": False, "msg": "Correo y contraseña son requeridos"})
-            
-            conn = get_db()
-            cur = conn.cursor()
-            
-            # Verificar si el usuario ya existe
-            cur.execute("SELECT * FROM usuarios WHERE email=?", (email,))
-            if cur.fetchone():
-                conn.close()
-                return jsonify({"ok": False, "msg": "El correo ya está registrado"})
-            
-            # Crear inventario para el nuevo usuario
-            nombre_inventario = f"Inventario de {email}"
-            cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", (nombre_inventario,))
-            inventario_id = cur.lastrowid
-            
-            # Crear usuario
-            nombre_usuario = email.split('@')[0] if '@' in email else email
-            cur.execute("""
-            INSERT INTO usuarios (email, password, rol, inventario_id, nombre)
-            VALUES (?, ?, 'usuario', ?, ?)
-            """, (email, password, inventario_id, nombre_usuario))
-            
-            conn.commit()
+        email = request.form.get("email")
+        password = request.form.get("password")
+        nombre = request.form.get("nombre", email)
+
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM usuarios WHERE email=?", (email,))
+        if cur.fetchone():
             conn.close()
-            
-            print(f"✅ Usuario registrado: {email}", file=sys.stderr)
-            return jsonify({"ok": True, "msg": "Usuario creado exitosamente"})
-            
-        except Exception as e:
-            print(f"❌ Error en register: {str(e)}", file=sys.stderr)
-            return jsonify({"ok": False, "msg": f"Error del servidor: {str(e)}"})
-    
+            flash("❌ Usuario ya existe")
+            return redirect("/register")
+
+        cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", (f"Inventario de {email}",))
+        inventario_id = cur.lastrowid
+        cur.execute("INSERT INTO usuarios (nombre,email,password,rol,inventario_id) VALUES (?,?,?,?,?)",
+                    (nombre,email,password,"usuario",inventario_id))
+        conn.commit()
+        conn.close()
+        flash("✅ Usuario registrado")
+        return redirect("/login")
+
     return render_template("register.html")
 
 
