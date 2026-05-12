@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, session, flash, send_file
+from flask import Flask, render_template, request, redirect, session, flash, send_file, jsonify
 from reportlab.platypus import SimpleDocTemplate, Table
 import sqlite3
 import io
@@ -11,11 +11,9 @@ app.secret_key = "secret"
 # ================= DB MODIFICADA PARA RENDER =================
 def get_db():
     """Usa /tmp/inventario.db en Render para permitir escritura"""
-    # Si estamos en Render, usar la carpeta /tmp (escribible)
     if os.environ.get("RENDER"):
         db_path = '/tmp/inventario.db'
     else:
-        # Local: usar el archivo normal
         db_path = 'inventario.db'
     
     conn = sqlite3.connect(db_path)
@@ -129,7 +127,7 @@ def init_db():
     print("✅ Base de datos SQLite inicializada correctamente")
 
 
-# ================= LOGIN =================
+# ================= LOGIN (CORREGIDO - ENVÍA MENSAJES) =================
 @app.route("/", methods=["GET","POST"])
 @app.route("/login", methods=["GET","POST"])
 def login():
@@ -146,11 +144,13 @@ def login():
         conn = get_db()
         cur = conn.cursor()
 
-        # Comparación directa (sin hash) - PERMITE espacios en blanco
+        # Buscar usuario por email
         cur.execute("SELECT * FROM usuarios WHERE email=?", (email,))
         user = cur.fetchone()
         
         autenticado = False
+        mensaje_error = "Credenciales incorrectas"
+        
         if user:
             # Si es test@email.com, acepta cualquier contraseña
             if user["email"] == "test@email.com":
@@ -158,6 +158,10 @@ def login():
             # Si no, comparar contraseña directamente
             elif user["password"] == password:
                 autenticado = True
+            else:
+                mensaje_error = "Contraseña incorrecta"
+        else:
+            mensaje_error = "Usuario no encontrado"
         
         conn.close()
 
@@ -169,21 +173,22 @@ def login():
             session["nombre"] = user.get("nombre", user["email"])
 
             if request.is_json:
-                return {"ok": True, "redirect": "/admin" if user["rol"] == "admin" else "/index"}
+                # ✅ Enviar respuesta JSON con ok=true
+                return jsonify({"ok": True, "redirect": "/admin" if user["rol"] == "admin" else "/index"})
             else:
                 return redirect("/admin" if user["rol"] == "admin" else "/index")
 
+        # ✅ Login fallido - enviar mensaje de error
         if request.is_json:
-            return {"ok": False, "msg": "Credenciales incorrectas"}
+            return jsonify({"ok": False, "msg": mensaje_error})
         else:
-            flash("Credenciales incorrectas")
+            flash(mensaje_error)
             return redirect("/login")
 
     return render_template("login.html")
 
 
-# ================= REGISTER =================
-# ⚠️ PERMITE espacios en blanco para pruebas de software
+# ================= REGISTER (CORREGIDO - ENVÍA MENSAJES) =================
 @app.route("/register", methods=["GET","POST"])
 def register():
     if request.method == "POST":
@@ -196,33 +201,45 @@ def register():
             email = request.form.get("email")
             password = request.form.get("password")
 
-        # ⚠️ SIN VALIDACIÓN de espacios - permitido para pruebas
+        # Validar que no estén vacíos
+        if not email or not password:
+            if request.is_json:
+                return jsonify({"ok": False, "msg": "Correo y contraseña son requeridos"})
+            else:
+                flash("Correo y contraseña son requeridos")
+                return redirect("/register")
+
         conn = get_db()
         cur = conn.cursor()
 
+        # Verificar si el usuario ya existe
         cur.execute("SELECT * FROM usuarios WHERE email=?", (email,))
         if cur.fetchone():
             conn.close()
             if request.is_json:
-                return {"ok": False, "msg": "Usuario ya existe"}
+                return jsonify({"ok": False, "msg": "El correo ya está registrado"})
             else:
-                flash("Usuario ya existe")
+                flash("El correo ya está registrado")
                 return redirect("/register")
 
         # Crear inventario para el nuevo usuario
-        cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", (f"Inventario de {email}",))
+        nombre_inventario = f"Inventario de {email}"
+        cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", (nombre_inventario,))
         inventario_id = cur.lastrowid
 
+        # Crear usuario (contraseña en texto plano)
+        nombre_usuario = email.split('@')[0] if '@' in email else email
         cur.execute("""
         INSERT INTO usuarios (email, password, rol, inventario_id, nombre)
         VALUES (?, ?, 'usuario', ?, ?)
-        """, (email, password, inventario_id, email.split('@')[0] if '@' in email else email))
+        """, (email, password, inventario_id, nombre_usuario))
 
         conn.commit()
         conn.close()
 
+        # ✅ Registro exitoso
         if request.is_json:
-            return {"ok": True}
+            return jsonify({"ok": True, "msg": "Usuario creado exitosamente"})
         else:
             flash("Usuario registrado exitosamente")
             return redirect("/login")
@@ -248,7 +265,6 @@ def index():
     cur.execute("SELECT DISTINCT categoria FROM productos WHERE inventario_id=?", (session["inventario_id"],))
     categorias = cur.fetchall()
     
-    # Calcular total del inventario
     total_valor = 0
     for p in productos:
         total_valor += p["cantidad"] * p["precio"]
@@ -315,7 +331,6 @@ def agregar_producto():
         flash("❌ Valores inválidos")
         return redirect("/index")
 
-    # Obtener categoría
     categoria_select = request.form.get("categoria_select", "")
     nueva_categoria = request.form.get("nueva_categoria", "")
     
@@ -710,11 +725,10 @@ def eliminar_usuario(id):
     user = cur.fetchone()
 
     if user:
-        # Verificar si otros usuarios usan el mismo inventario
         cur.execute("SELECT COUNT(*) as total FROM usuarios WHERE inventario_id=?", (user["inventario_id"],))
         otros = cur.fetchone()["total"]
         
-        if otros <= 1:  # Solo este usuario
+        if otros <= 1:
             cur.execute("DELETE FROM productos WHERE inventario_id=?", (user["inventario_id"],))
             cur.execute("DELETE FROM inventarios WHERE id=?", (user["inventario_id"],))
 
