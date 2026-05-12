@@ -176,6 +176,11 @@ def agregar_producto():
         flash("❌ Valores inválidos")
         return redirect("/index")
 
+    # Manejo de categoría
+    categoria = request.form.get("categoria_select")
+    if categoria == "nueva":
+        categoria = request.form.get("nueva_categoria")
+
     conn = get_db()
     cur = conn.cursor()
 
@@ -184,7 +189,7 @@ def agregar_producto():
         VALUES (?, ?, ?, ?, ?)
     """, (
         request.form["nombre"],
-        request.form["categoria"],
+        categoria,
         precio,
         cantidad,
         session["inventario_id"]
