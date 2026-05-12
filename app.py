@@ -22,6 +22,7 @@ def get_db():
     db_dir = os.path.dirname(db_path)
     if db_dir and not os.path.exists(db_dir):
         os.makedirs(db_dir)
+        print(f"📁 Directorio creado: {db_dir}", file=sys.stderr)
     
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -29,64 +30,102 @@ def get_db():
 
 
 def init_db():
-    """Inicializa la base de datos con todas las tablas y datos de prueba"""
-    conn = get_db()
-    cur = conn.cursor()
-    
-    print("📝 Inicializando base de datos...", file=sys.stderr)
+    """Inicializa la base de datos SOLO si las tablas no existen"""
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        
+        print("📝 Verificando base de datos...", file=sys.stderr)
 
-    # ========== CREAR TABLAS ==========
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS usuarios (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        email TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL,
-        rol TEXT NOT NULL DEFAULT 'usuario',
-        nombre TEXT,
-        inventario_id INTEGER
-    )
-    """)
+        # ========== VERIFICAR SI LAS TABLAS EXISTEN ==========
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='usuarios'")
+        tabla_usuarios_existe = cur.fetchone() is not None
+        
+        if tabla_usuarios_existe:
+            # Las tablas ya existen, solo verificar datos
+            cur.execute("SELECT COUNT(*) as total FROM usuarios")
+            total_usuarios = cur.fetchone()["total"]
+            print(f"✅ Base de datos ya existe con {total_usuarios} usuarios", file=sys.stderr)
+            
+            # Verificar que los usuarios de prueba existen, si no, crearlos
+            usuarios_necesarios = [
+                ("admin@email.com", "admin123", "admin", "Administrador"),
+                ("repmotos@email.com", "123456", "usuario", "Repuestos Motos"),
+                ("test@email.com", "", "usuario", "Usuario Test")
+            ]
+            
+            for email, password, rol, nombre in usuarios_necesarios:
+                cur.execute("SELECT * FROM usuarios WHERE email=?", (email,))
+                if not cur.fetchone():
+                    # Usuario no existe, crearlo
+                    # Buscar o crear inventario
+                    cur.execute("SELECT id FROM inventarios LIMIT 1")
+                    inv = cur.fetchone()
+                    if inv:
+                        inv_id = inv[0]
+                    else:
+                        cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", ("Principal",))
+                        inv_id = cur.lastrowid
+                    
+                    cur.execute("""
+                        INSERT INTO usuarios (email, password, rol, nombre, inventario_id) 
+                        VALUES (?, ?, ?, ?, ?)
+                    """, (email, password, rol, nombre, inv_id))
+                    print(f"   ✅ Usuario faltante creado: {email}", file=sys.stderr)
+            
+            conn.commit()
+            conn.close()
+            return True
+        
+        # ========== SI NO EXISTEN TABLAS, CREAR TODO DESDE CERO ==========
+        print("📝 Creando tablas por primera vez...", file=sys.stderr)
 
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS inventarios (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nombre TEXT NOT NULL
-    )
-    """)
+        # Crear tablas
+        cur.execute("""
+        CREATE TABLE usuarios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            rol TEXT NOT NULL DEFAULT 'usuario',
+            nombre TEXT,
+            inventario_id INTEGER
+        )
+        """)
 
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS productos (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nombre TEXT NOT NULL,
-        categoria TEXT NOT NULL,
-        cantidad INTEGER NOT NULL,
-        precio REAL NOT NULL,
-        inventario_id INTEGER NOT NULL
-    )
-    """)
+        cur.execute("""
+        CREATE TABLE inventarios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT NOT NULL
+        )
+        """)
 
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS ventas (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        producto_id INTEGER,
-        producto TEXT,
-        cantidad INTEGER,
-        precio REAL,
-        fecha TEXT DEFAULT CURRENT_TIMESTAMP,
-        inventario_id INTEGER
-    )
-    """)
-    
-    print("✅ Tablas creadas/verificadas", file=sys.stderr)
+        cur.execute("""
+        CREATE TABLE productos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT NOT NULL,
+            categoria TEXT NOT NULL,
+            cantidad INTEGER NOT NULL,
+            precio REAL NOT NULL,
+            inventario_id INTEGER NOT NULL
+        )
+        """)
 
-    # ========== VERIFICAR Y CREAR DATOS DE PRUEBA ==========
-    cur.execute("SELECT COUNT(*) as total FROM usuarios")
-    total = cur.fetchone()["total"]
-    
-    print(f"📊 Usuarios existentes: {total}", file=sys.stderr)
-    
-    if total == 0:
-        print("📝 Creando usuarios de prueba...", file=sys.stderr)
+        cur.execute("""
+        CREATE TABLE ventas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            producto_id INTEGER,
+            producto TEXT,
+            cantidad INTEGER,
+            precio REAL,
+            fecha TEXT DEFAULT CURRENT_TIMESTAMP,
+            inventario_id INTEGER
+        )
+        """)
+        
+        print("✅ Tablas creadas", file=sys.stderr)
+
+        # ========== CREAR DATOS DE PRUEBA ==========
+        print("📝 Creando datos iniciales...", file=sys.stderr)
         
         # Crear inventario principal
         cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", ("Principal",))
@@ -101,21 +140,18 @@ def init_db():
             INSERT INTO usuarios (email, password, rol, nombre, inventario_id) 
             VALUES (?, ?, ?, ?, ?)
         """, ("admin@email.com", "admin123", "admin", "Administrador", inv_principal_id))
-        print("   ✅ Admin creado", file=sys.stderr)
         
         # Usuario Repmotos
         cur.execute("""
             INSERT INTO usuarios (email, password, rol, nombre, inventario_id) 
             VALUES (?, ?, ?, ?, ?)
         """, ("repmotos@email.com", "123456", "usuario", "Repuestos Motos", inv_repmotos_id))
-        print("   ✅ Repmotos creado", file=sys.stderr)
         
         # Usuario Test
         cur.execute("""
             INSERT INTO usuarios (email, password, rol, nombre, inventario_id) 
             VALUES (?, ?, ?, ?, ?)
         """, ("test@email.com", "", "usuario", "Usuario Test", inv_principal_id))
-        print("   ✅ Test creado", file=sys.stderr)
         
         # Productos para repmotos
         productos = [
@@ -137,22 +173,28 @@ def init_db():
                 VALUES (?, ?, ?, ?, ?)
             """, (nombre, categoria, cantidad, precio, inv_repmotos_id))
         
-        print(f"   ✅ {len(productos)} productos creados", file=sys.stderr)
-        
         conn.commit()
+        
+        # Verificar que todo se creó correctamente
+        cur.execute("SELECT COUNT(*) as total FROM usuarios")
+        total_usuarios = cur.fetchone()["total"]
+        cur.execute("SELECT COUNT(*) as total FROM productos")
+        total_productos = cur.fetchone()["total"]
+        
+        print(f"📊 Resumen:", file=sys.stderr)
+        print(f"   Usuarios creados: {total_usuarios}", file=sys.stderr)
+        print(f"   Productos creados: {total_productos}", file=sys.stderr)
+        
+        conn.close()
         print("✅ Base de datos inicializada con éxito", file=sys.stderr)
-    else:
-        print("✅ Base de datos ya existente, omitiendo creación", file=sys.stderr)
-        # Verificar que los usuarios existen
-        cur.execute("SELECT id, email, rol FROM usuarios")
-        usuarios = cur.fetchall()
-        for u in usuarios:
-            print(f"   Usuario existente: {u['email']} (rol: {u['rol']})", file=sys.stderr)
-    
-    conn.close()
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error en init_db: {str(e)}", file=sys.stderr)
+        return False
 
 
-# ================= LOGIN CORREGIDO =================
+# ================= LOGIN =================
 @app.route("/", methods=["GET", "POST"])
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -175,12 +217,6 @@ def login():
             
             conn = get_db()
             cur = conn.cursor()
-            
-            # Verificar que la tabla existe
-            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='usuarios'")
-            if not cur.fetchone():
-                print("❌ Tabla usuarios no existe!", file=sys.stderr)
-                return jsonify({"ok": False, "msg": "Error de configuración, contacte al administrador"})
             
             # Buscar usuario
             cur.execute("SELECT * FROM usuarios WHERE email=?", (email,))
@@ -280,22 +316,33 @@ def register():
 @app.route("/health")
 def health():
     """Ruta para verificar que el servidor está funcionando"""
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='usuarios'")
-    table_exists = cur.fetchone() is not None
-    conn.close()
-    
-    return jsonify({
-        "status": "ok", 
-        "message": "Servidor funcionando correctamente",
-        "db_tables": {
-            "usuarios": table_exists
-        }
-    })
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) as total FROM usuarios")
+        total_usuarios = cur.fetchone()["total"]
+        cur.execute("SELECT COUNT(*) as total FROM productos")
+        total_productos = cur.fetchone()["total"]
+        conn.close()
+        
+        return jsonify({
+            "status": "ok", 
+            "message": "Servidor funcionando correctamente",
+            "stats": {
+                "usuarios": total_usuarios,
+                "productos": total_productos
+            }
+        })
+    except Exception as e:
+        return jsonify({
+            "status": "error", 
+            "message": str(e)
+        }), 500
 
 
-# ================= RESTO DE RUTAS =================
+# ================= RESTO DE RUTAS (index, admin, ventas, etc.) =================
+# [Mantén todas las demás rutas igual que en tu versión anterior]
+
 @app.route("/index")
 def index():
     if "user_id" not in session:
@@ -814,8 +861,11 @@ def logout():
 
 # ================= MAIN =================
 if __name__ == "__main__":
-    # Forzar inicialización de la base de datos al inicio
+    # Verificar si es primera ejecución
     print("🚀 Iniciando aplicación...", file=sys.stderr)
+    print("="*50, file=sys.stderr)
+    
+    # Inicializar base de datos (NO borra datos existentes)
     init_db()
     
     print("\n" + "="*50, file=sys.stderr)
