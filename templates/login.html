@@ -24,8 +24,6 @@
 
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-
 <script>
 async function login(){
     const email = document.getElementById('email').value;
@@ -37,25 +35,35 @@ async function login(){
     }
     
     try {
-        const response = await axios.post("/login", {
-            email: email,
-            password: password
+        console.log('Enviando petición a /login');
+        
+        const response = await fetch('/login', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                email: email,
+                password: password
+            })
         });
         
-        console.log('Respuesta:', response.data); // Para depuración
+        console.log('Respuesta recibida:', response.status);
+        const data = await response.json();
+        console.log('Datos:', data);
         
-        if(response.data.ok){
-            window.location.href = response.data.redirect;
+        if(data.ok){
+            window.location.href = data.redirect;
         } else {
-            alert(response.data.msg || "Credenciales incorrectas");
+            alert(data.msg || "Credenciales incorrectas");
         }
     } catch(error) {
         console.error('Error:', error);
-        alert('Error al conectar con el servidor. Verifique que el servidor esté corriendo.');
+        alert('Error al conectar con el servidor: ' + error.message);
     }
 }
 
-// Permitir presionar Enter para enviar
+// Permitir presionar Enter
 document.getElementById('password').addEventListener('keypress', function(e) {
     if (e.key === 'Enter') {
         login();
