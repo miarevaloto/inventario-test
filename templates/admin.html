@@ -3,6 +3,31 @@
 <head>
 <title>Admin</title>
 <link rel="stylesheet" href="/static/style.css">
+<style>
+/* Estilos básicos para modales */
+.modal {
+  display: none;
+  position: fixed;
+  z-index: 1000;
+  left: 0; top: 0;
+  width: 100%; height: 100%;
+  background-color: rgba(0,0,0,0.5);
+  justify-content: center;
+  align-items: center;
+}
+.modal-content {
+  background: #fff;
+  padding: 20px;
+  border-radius: 8px;
+  width: 400px;
+  max-width: 90%;
+}
+.close {
+  float: right;
+  font-size: 20px;
+  cursor: pointer;
+}
+</style>
 </head>
 
 <body>
@@ -28,7 +53,7 @@
 <th>Rol</th>
 <th>Inventario</th>
 <th>Asignar</th>
-
+<th>Eliminar</th>
 </tr>
 </thead>
 
@@ -43,7 +68,6 @@
 <td>
 <form method="POST" action="/asignar">
 <input type="hidden" name="user_id" value="{{u['id']}}">
-
 <select name="inventario_id">
 {% for inv in inventarios %}
 <option value="{{inv['id']}}">
@@ -51,7 +75,6 @@
 </option>
 {% endfor %}
 </select>
-
 <button class="btn btn-xs">Asignar</button>
 </form>
 </td>
@@ -70,24 +93,18 @@
 <!-- CREAR USUARIO -->
 <div class="card">
 <h2>➕ Crear Usuario</h2>
-
 <form method="POST" action="/crear_usuario_admin">
 <input type="email" name="email" required>
 <input type="password" name="password" required>
-
 <select name="rol">
 <option value="usuario">Usuario</option>
 <option value="admin">Admin</option>
 </select>
-
 <select name="inventario_id">
 {% for inv in inventarios %}
-<option value="{{inv['id']}}">
-{{inv['nombre']}}
-</option>
+<option value="{{inv['id']}}">{{inv['nombre']}}</option>
 {% endfor %}
 </select>
-
 <button class="btn btn-primary">Crear Usuario</button>
 </form>
 </div>
@@ -100,12 +117,17 @@
 <tr>
 <th>ID</th>
 <th>Nombre</th>
+<th>Acciones</th>
 </tr>
 
 {% for inv in inventarios %}
 <tr>
 <td>{{inv["id"]}}</td>
 <td>{{inv["nombre"]}}</td>
+<td>
+    <button onclick="abrirModalModificar({{inv['id']}}, '{{inv['nombre']}}')" class="btn-primary btn-xs">✏️ Modificar</button>
+    <button onclick="abrirModalEliminar({{inv['id']}}, '{{inv['nombre']}}')" class="btn-danger btn-xs">❌ Eliminar</button>
+</td>
 </tr>
 {% endfor %}
 </table>
@@ -114,15 +136,68 @@
 <!-- CREAR INVENTARIO -->
 <div class="card">
 <h2>➕ Crear Inventario</h2>
-
 <form method="POST" action="/crear_inventario">
 <input type="text" name="nombre" placeholder="Nombre del inventario" required>
 <button class="btn btn-success">Crear Inventario</button>
 </form>
-
 </div>
 
 </div>
+
+<!-- MODAL MODIFICAR -->
+<div id="modalModificar" class="modal">
+  <div class="modal-content">
+    <span class="close" onclick="cerrarModal('modalModificar')">&times;</span>
+    <h2>✏️ Modificar Inventario</h2>
+    <p id="nombreInventarioModificar"></p>
+    <form method="POST" action="/modificar_inventario">
+      <input type="hidden" name="id" id="idInventarioModificar">
+      <input type="text" name="nombre" placeholder="Nuevo nombre" required>
+      <div style="margin-top:10px;">
+        <button type="submit" class="btn btn-primary">Confirmar</button>
+        <button type="button" onclick="cerrarModal('modalModificar')" class="btn btn-secondary">Cancelar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL ELIMINAR -->
+<div id="modalEliminar" class="modal">
+  <div class="modal-content">
+    <span class="close" onclick="cerrarModal('modalEliminar')">&times;</span>
+    <h2>❌ Eliminar Inventario</h2>
+    <p id="nombreInventarioEliminar"></p>
+    <form method="POST" action="/eliminar_inventario">
+      <input type="hidden" name="id" id="idInventarioEliminar">
+      <div style="margin-top:10px;">
+        <button type="submit" class="btn btn-danger">Eliminar</button>
+        <button type="button" onclick="cerrarModal('modalEliminar')" class="btn btn-secondary">Cancelar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function abrirModalModificar(id, nombre) {
+    document.getElementById("modalModificar").style.display = "flex";
+    document.getElementById("idInventarioModificar").value = id;
+    document.getElementById("nombreInventarioModificar").innerText = "Inventario: " + nombre;
+}
+function abrirModalEliminar(id, nombre) {
+    document.getElementById("modalEliminar").style.display = "flex";
+    document.getElementById("idInventarioEliminar").value = id;
+    document.getElementById("nombreInventarioEliminar").innerText = "Inventario: " + nombre;
+}
+function cerrarModal(modalId) {
+    document.getElementById(modalId).style.display = "none";
+}
+window.onclick = function(event) {
+    const modModificar = document.getElementById("modalModificar");
+    const modEliminar = document.getElementById("modalEliminar");
+    if (event.target === modModificar) cerrarModal("modalModificar");
+    if (event.target === modEliminar) cerrarModal("modalEliminar");
+}
+</script>
 
 </body>
 </html>
