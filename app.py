@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, session, flash, send_file
+from flask import Flask, render_template, request, redirect, session, flash, send_file, jsonify
 import sqlite3
 import os
 import io
@@ -15,6 +15,8 @@ def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if "user_id" not in session:
+            if request.is_json or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({"ok": False, "msg": "No autorizado"}), 401
             flash("🔒 Por favor, inicia sesión para acceder a esta página", "warning")
             return redirect("/login")
         return f(*args, **kwargs)
@@ -26,6 +28,8 @@ def role_required(required_role):
         @wraps(f)
         def decorated_function(*args, **kwargs):
             if session.get("rol") != required_role:
+                if request.is_json or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return jsonify({"ok": False, "msg": "No tienes permisos"}), 403
                 flash("⛔ No tienes permisos para acceder a esta página", "error")
                 return redirect("/index")
             return f(*args, **kwargs)
@@ -78,7 +82,7 @@ def init_db():
     # Crear usuario admin por defecto si no existe
     cur.execute("SELECT * FROM usuarios WHERE email='admin@admin.com'")
     if not cur.fetchone():
-        # Hash de la contraseña (en un sistema real usa bcrypt)
+        # Hash de la contraseña
         password_hash = hashlib.sha256("admin123".encode()).hexdigest()
         cur.execute("INSERT INTO usuarios (email, password, rol, nombre) VALUES (?, ?, ?, ?)",
                     ("admin@admin.com", password_hash, "admin", "Administrador"))
@@ -96,7 +100,7 @@ def init_db():
     conn.commit()
     conn.close()
 
-# ================= RUTAS PRINCIPALES =================
+# ================= RUTAS DE AUTENTICACIÓN =================
 @app.route("/")
 def home():
     if "user_id" in session:
@@ -105,63 +109,68 @@ def home():
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    if request.method == "POST":
-        email = request.form["email"]
-        password = request.form["password"]
-        
-        # Hash de la contraseña para comparar
-        password_hash = hashlib.sha256(password.encode()).hexdigest()
-        
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM usuarios WHERE email=? AND password=?", (email, password_hash))
-        user = cur.fetchone()
-        
-        if user:
-            session["user_id"] = user["id"]
-            session["email"] = user["email"]
-            session["rol"] = user["rol"]
-            session["nombre"] = user.get("nombre", user["email"])
-            session["inventario_id"] = user["inventario_id"]
-            conn.close()
-            flash(f"✅ ¡Bienvenido {session['nombre']}!", "success")
-            return redirect("/index")
-        else:
-            conn.close()
-            flash("❌ Correo o contraseña incorrectos", "error")
-            return redirect("/login")
+    if request.method == "GET":
+        return render_template("login.html")
     
-    return render_template("login.html")
+    # POST - Login con AJAX
+    data = request.get_json()
+    email = data.get("email")
+    password = data.get("password")
+    
+    if not email or not password:
+        return jsonify({"ok": False, "msg": "Correo y contraseña requeridos"})
+    
+    # Hash de la contraseña para comparar
+    password_hash = hashlib.sha256(password.encode()).hexdigest()
+    
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM usuarios WHERE email=? AND password=?", (email, password_hash))
+    user = cur.fetchone()
+    conn.close()
+    
+    if user:
+        session["user_id"] = user["id"]
+        session["email"] = user["email"]
+        session["rol"] = user["rol"]
+        session["nombre"] = user.get("nombre", user["email"])
+        session["inventario_id"] = user["inventario_id"]
+        return jsonify({"ok": True, "redirect": "/index"})
+    else:
+        return jsonify({"ok": False, "msg": "Credenciales incorrectas"})
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
-    if request.method == "POST":
-        email = request.form["email"]
-        password = request.form["password"]
-        nombre = request.form.get("nombre", "")
-        
-        # Hash de la contraseña
-        password_hash = hashlib.sha256(password.encode()).hexdigest()
-        
-        conn = get_db()
-        cur = conn.cursor()
-        
-        try:
-            # Asignar inventario por defecto
-            cur.execute("SELECT id FROM inventarios WHERE nombre='Principal'")
-            inv_id = cur.fetchone()[0]
-            
-            cur.execute("INSERT INTO usuarios (email, password, rol, nombre, inventario_id) VALUES (?, ?, ?, ?, ?)",
-                        (email, password_hash, "usuario", nombre, inv_id))
-            conn.commit()
-            flash("✅ Usuario registrado exitosamente. Ya puedes iniciar sesión.", "success")
-            return redirect("/login")
-        except sqlite3.IntegrityError:
-            flash("❌ El correo ya está registrado", "error")
-        finally:
-            conn.close()
+    if request.method == "GET":
+        return render_template("register.html")
     
-    return render_template("register.html")
+    # POST - Register con AJAX
+    data = request.get_json()
+    email = data.get("email")
+    password = data.get("password")
+    
+    if not email or not password:
+        return jsonify({"ok": False, "msg": "Correo y contraseña requeridos"})
+    
+    # Hash de la contraseña
+    password_hash = hashlib.sha256(password.encode()).hexdigest()
+    
+    conn = get_db()
+    cur = conn.cursor()
+    
+    try:
+        # Asignar inventario por defecto
+        cur.execute("SELECT id FROM inventarios WHERE nombre='Principal'")
+        inv_id = cur.fetchone()[0]
+        
+        cur.execute("INSERT INTO usuarios (email, password, rol, nombre, inventario_id) VALUES (?, ?, ?, ?, ?)",
+                    (email, password_hash, "usuario", email.split('@')[0], inv_id))
+        conn.commit()
+        return jsonify({"ok": True, "msg": "Usuario creado exitosamente"})
+    except sqlite3.IntegrityError:
+        return jsonify({"ok": False, "msg": "El correo ya está registrado"})
+    finally:
+        conn.close()
 
 @app.route("/index")
 @login_required
@@ -177,17 +186,11 @@ def index():
     cur.execute("SELECT DISTINCT categoria FROM productos WHERE inventario_id=?", (session["inventario_id"],))
     categorias = cur.fetchall()
     
-    # Calcular valor total del inventario
-    total_valor = 0
-    for p in productos:
-        total_valor += p["cantidad"] * p["precio"]
-    
     conn.close()
     
     return render_template("index.html", 
                          productos=productos, 
                          categorias=categorias,
-                         total_valor=total_valor,
                          producto_buscado=None)
 
 @app.route("/buscar_producto", methods=["POST"])
@@ -319,20 +322,16 @@ def admin():
     cur.execute("SELECT * FROM inventarios ORDER BY id")
     inventarios = cur.fetchall()
     
-    # Obtener estadísticas
-    cur.execute("SELECT COUNT(*) as total FROM usuarios")
-    total_usuarios = cur.fetchone()["total"]
-    
-    cur.execute("SELECT COUNT(*) as total FROM productos")
-    total_productos = cur.fetchone()["total"]
+    # Contar productos por inventario
+    for inv in inventarios:
+        cur.execute("SELECT COUNT(*) as total FROM productos WHERE inventario_id=?", (inv["id"],))
+        inv["total_productos"] = cur.fetchone()["total"]
     
     conn.close()
     
     return render_template("admin.html", 
                          usuarios=usuarios, 
-                         inventarios=inventarios,
-                         total_usuarios=total_usuarios,
-                         total_productos=total_productos)
+                         inventarios=inventarios)
 
 @app.route("/crear_usuario_admin", methods=["POST"])
 @login_required
@@ -455,7 +454,15 @@ def eliminar_inventario():
     cur = conn.cursor()
     
     try:
-        cur.execute("DELETE FROM productos WHERE inventario_id=?", (inventario_id,))
+        # Verificar si el inventario tiene productos
+        cur.execute("SELECT COUNT(*) as total FROM productos WHERE inventario_id=?", (inventario_id,))
+        total = cur.fetchone()["total"]
+        
+        if total > 0:
+            flash(f"❌ No se puede eliminar el inventario porque tiene {total} productos asociados", "error")
+            conn.close()
+            return redirect("/admin")
+        
         cur.execute("DELETE FROM inventarios WHERE id=?", (inventario_id,))
         conn.commit()
         flash(f"✅ Inventario eliminado exitosamente", "success")
@@ -518,25 +525,19 @@ def ventas():
     
     # Obtener historial de ventas
     cur.execute("""
-        SELECT v.*, p.precio as precio_actual 
+        SELECT v.* 
         FROM ventas v
-        LEFT JOIN productos p ON v.producto_id = p.id
         WHERE v.inventario_id=?
         ORDER BY v.id DESC
         LIMIT 50
     """, (session["inventario_id"],))
     ventas_list = cur.fetchall()
     
-    # Calcular total de ventas
-    cur.execute("SELECT SUM(cantidad * precio) as total FROM ventas WHERE inventario_id=?", (session["inventario_id"],))
-    total_ventas = cur.fetchone()["total"] or 0
-    
     conn.close()
     
     return render_template("ventas.html", 
                          productos=productos,
-                         ventas=ventas_list,
-                         total_ventas=total_ventas)
+                         ventas=ventas_list)
 
 @app.route("/venta", methods=["POST"])
 @login_required
@@ -572,124 +573,126 @@ def registrar_venta():
     conn.commit()
     conn.close()
     
-    total = cantidad * producto["precio"]
-    flash(f"💰 Venta registrada: {cantidad} x {producto['nombre']} = ${total:,.2f}", "success")
+    flash(f"💰 Venta registrada: {cantidad} x {producto['nombre']}", "success")
     return redirect("/ventas")
 
 # ================= REPORTE PDF =================
 @app.route("/reporte_pdf")
 @login_required
 def reporte_pdf():
-    from reportlab.lib.pagesizes import letter
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.enums import TA_CENTER
-    from reportlab.lib import colors
-    
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter)
-    
-    styles = getSampleStyleSheet()
-    title_style = ParagraphStyle(
-        'CustomTitle',
-        parent=styles['Title'],
-        alignment=TA_CENTER,
-        fontSize=16
-    )
-    
-    story = []
-    
-    # Título
-    story.append(Paragraph("Reporte de Inventario", title_style))
-    story.append(Spacer(1, 12))
-    
-    # Fecha y usuario
-    fecha = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-    story.append(Paragraph(f"Generado por: {session.get('nombre', 'Usuario')}", styles['Normal']))
-    story.append(Paragraph(f"Fecha: {fecha}", styles['Normal']))
-    story.append(Spacer(1, 12))
-    
-    conn = get_db()
-    cur = conn.cursor()
-    
-    # Obtener información del inventario
-    cur.execute("""
-        SELECT i.nombre as inventario_nombre, COUNT(p.id) as total_productos,
-               COALESCE(SUM(p.cantidad * p.precio), 0) as valor_total
-        FROM inventarios i
-        LEFT JOIN productos p ON i.id = p.inventario_id
-        WHERE i.id = ?
-        GROUP BY i.id
-    """, (session["inventario_id"],))
-    
-    inventario_info = cur.fetchone()
-    if inventario_info:
-        story.append(Paragraph(f"Inventario: {inventario_info['inventario_nombre']}", styles['Normal']))
-        story.append(Paragraph(f"Total Productos: {inventario_info['total_productos'] or 0}", styles['Normal']))
-        story.append(Paragraph(f"Valor Total: ${inventario_info['valor_total']:,.2f}", styles['Normal']))
+    try:
+        from reportlab.lib.pagesizes import letter
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.enums import TA_CENTER
+        from reportlab.lib import colors
+        
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter)
+        
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Title'],
+            alignment=TA_CENTER,
+            fontSize=16
+        )
+        
+        story = []
+        
+        # Título
+        story.append(Paragraph("Reporte de Inventario", title_style))
         story.append(Spacer(1, 12))
-    
-    # Obtener productos
-    cur.execute("""
-        SELECT nombre, categoria, cantidad, precio, 
-               (cantidad * precio) as valor_total
-        FROM productos
-        WHERE inventario_id=?
-        ORDER BY categoria, nombre
-    """, (session["inventario_id"],))
-    
-    products = cur.fetchall()
-    
-    if products:
-        data = [["Nombre", "Categoría", "Cantidad", "Precio Unitario", "Valor Total"]]
         
-        total_general = 0
-        for row in products:
-            valor = row["cantidad"] * row["precio"]
-            total_general += valor
-            data.append([
-                row["nombre"], 
-                row["categoria"], 
-                f"{row['cantidad']:,}", 
-                f"${row['precio']:,.2f}", 
-                f"${valor:,.2f}"
-            ])
+        # Fecha y usuario
+        fecha = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        story.append(Paragraph(f"Generado por: {session.get('nombre', 'Usuario')}", styles['Normal']))
+        story.append(Paragraph(f"Fecha: {fecha}", styles['Normal']))
+        story.append(Spacer(1, 12))
         
-        data.append(["", "", "", "TOTAL:", f"${total_general:,.2f}"])
+        conn = get_db()
+        cur = conn.cursor()
         
-        table = Table(data)
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('ALIGN', (3, 1), (-1, -1), 'RIGHT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 10),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, -1), (-1, -1), colors.beige),
-            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
-            ('GRID', (0, 0), (-1, -2), 1, colors.black),
-            ('BOX', (0, 0), (-1, -1), 2, colors.black),
-        ]))
+        # Obtener información del inventario
+        cur.execute("""
+            SELECT i.nombre as inventario_nombre, COUNT(p.id) as total_productos,
+                   COALESCE(SUM(p.cantidad * p.precio), 0) as valor_total
+            FROM inventarios i
+            LEFT JOIN productos p ON i.id = p.inventario_id
+            WHERE i.id = ?
+            GROUP BY i.id
+        """, (session["inventario_id"],))
         
-        story.append(table)
-    else:
-        story.append(Paragraph("No hay productos en este inventario", styles['Normal']))
-    
-    conn.close()
-    
-    doc.build(story)
-    buffer.seek(0)
-    
-    return send_file(buffer, as_attachment=True, 
-                    download_name="reporte_inventario.pdf", 
-                    mimetype='application/pdf')
+        inventario_info = cur.fetchone()
+        if inventario_info:
+            story.append(Paragraph(f"Inventario: {inventario_info['inventario_nombre']}", styles['Normal']))
+            story.append(Paragraph(f"Total Productos: {inventario_info['total_productos'] or 0}", styles['Normal']))
+            story.append(Paragraph(f"Valor Total: ${inventario_info['valor_total']:,.2f}", styles['Normal']))
+            story.append(Spacer(1, 12))
+        
+        # Obtener productos
+        cur.execute("""
+            SELECT nombre, categoria, cantidad, precio, 
+                   (cantidad * precio) as valor_total
+            FROM productos
+            WHERE inventario_id=?
+            ORDER BY categoria, nombre
+        """, (session["inventario_id"],))
+        
+        products = cur.fetchall()
+        
+        if products:
+            data = [["Nombre", "Categoría", "Cantidad", "Precio Unitario", "Valor Total"]]
+            
+            total_general = 0
+            for row in products:
+                valor = row["cantidad"] * row["precio"]
+                total_general += valor
+                data.append([
+                    row["nombre"], 
+                    row["categoria"], 
+                    f"{row['cantidad']:,}", 
+                    f"${row['precio']:,.2f}", 
+                    f"${valor:,.2f}"
+                ])
+            
+            data.append(["", "", "", "TOTAL:", f"${total_general:,.2f}"])
+            
+            table = Table(data)
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('ALIGN', (3, 1), (-1, -1), 'RIGHT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, -1), (-1, -1), colors.beige),
+                ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+                ('GRID', (0, 0), (-1, -2), 1, colors.black),
+                ('BOX', (0, 0), (-1, -1), 2, colors.black),
+            ]))
+            
+            story.append(table)
+        else:
+            story.append(Paragraph("No hay productos en este inventario", styles['Normal']))
+        
+        conn.close()
+        
+        doc.build(story)
+        buffer.seek(0)
+        
+        return send_file(buffer, as_attachment=True, 
+                        download_name="reporte_inventario.pdf", 
+                        mimetype='application/pdf')
+    except Exception as e:
+        flash(f"❌ Error al generar PDF: {str(e)}", "error")
+        return redirect("/index")
 
 # ================= LOGOUT =================
 @app.route("/logout")
 def logout():
     session.clear()
-    flash("👋 Sesión cerrada correctamente", "info")
     return redirect("/login")
 
 # ================= MAIN =================
