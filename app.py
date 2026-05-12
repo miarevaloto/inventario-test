@@ -17,16 +17,25 @@ def get_db():
         db_path = 'inventario.db'
     
     print(f"📁 Usando base de datos en: {db_path}", file=sys.stderr)
+    
+    # Asegurar que el directorio existe
+    db_dir = os.path.dirname(db_path)
+    if db_dir and not os.path.exists(db_dir):
+        os.makedirs(db_dir)
+    
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn
 
 
 def init_db():
+    """Inicializa la base de datos con todas las tablas y datos de prueba"""
     conn = get_db()
     cur = conn.cursor()
+    
+    print("📝 Inicializando base de datos...", file=sys.stderr)
 
-    # Crear tablas si no existen
+    # ========== CREAR TABLAS ==========
     cur.execute("""
     CREATE TABLE IF NOT EXISTS usuarios (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -67,10 +76,14 @@ def init_db():
         inventario_id INTEGER
     )
     """)
+    
+    print("✅ Tablas creadas/verificadas", file=sys.stderr)
 
-    # Verificar si hay usuarios, si no, crear los de prueba
+    # ========== VERIFICAR Y CREAR DATOS DE PRUEBA ==========
     cur.execute("SELECT COUNT(*) as total FROM usuarios")
     total = cur.fetchone()["total"]
+    
+    print(f"📊 Usuarios existentes: {total}", file=sys.stderr)
     
     if total == 0:
         print("📝 Creando usuarios de prueba...", file=sys.stderr)
@@ -88,18 +101,21 @@ def init_db():
             INSERT INTO usuarios (email, password, rol, nombre, inventario_id) 
             VALUES (?, ?, ?, ?, ?)
         """, ("admin@email.com", "admin123", "admin", "Administrador", inv_principal_id))
+        print("   ✅ Admin creado", file=sys.stderr)
         
         # Usuario Repmotos
         cur.execute("""
             INSERT INTO usuarios (email, password, rol, nombre, inventario_id) 
             VALUES (?, ?, ?, ?, ?)
         """, ("repmotos@email.com", "123456", "usuario", "Repuestos Motos", inv_repmotos_id))
+        print("   ✅ Repmotos creado", file=sys.stderr)
         
         # Usuario Test
         cur.execute("""
             INSERT INTO usuarios (email, password, rol, nombre, inventario_id) 
             VALUES (?, ?, ?, ?, ?)
         """, ("test@email.com", "", "usuario", "Usuario Test", inv_principal_id))
+        print("   ✅ Test creado", file=sys.stderr)
         
         # Productos para repmotos
         productos = [
@@ -121,18 +137,25 @@ def init_db():
                 VALUES (?, ?, ?, ?, ?)
             """, (nombre, categoria, cantidad, precio, inv_repmotos_id))
         
-        print(f"✅ Creados: 3 usuarios, 2 inventarios, {len(productos)} productos", file=sys.stderr)
-
-    conn.commit()
+        print(f"   ✅ {len(productos)} productos creados", file=sys.stderr)
+        
+        conn.commit()
+        print("✅ Base de datos inicializada con éxito", file=sys.stderr)
+    else:
+        print("✅ Base de datos ya existente, omitiendo creación", file=sys.stderr)
+        # Verificar que los usuarios existen
+        cur.execute("SELECT id, email, rol FROM usuarios")
+        usuarios = cur.fetchall()
+        for u in usuarios:
+            print(f"   Usuario existente: {u['email']} (rol: {u['rol']})", file=sys.stderr)
+    
     conn.close()
-    print("✅ Base de datos SQLite inicializada correctamente", file=sys.stderr)
 
 
 # ================= LOGIN CORREGIDO =================
 @app.route("/", methods=["GET", "POST"])
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    # Para debugging en Render
     print(f"📝 Login request - Method: {request.method}", file=sys.stderr)
     
     if request.method == "POST":
@@ -152,6 +175,12 @@ def login():
             
             conn = get_db()
             cur = conn.cursor()
+            
+            # Verificar que la tabla existe
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='usuarios'")
+            if not cur.fetchone():
+                print("❌ Tabla usuarios no existe!", file=sys.stderr)
+                return jsonify({"ok": False, "msg": "Error de configuración, contacte al administrador"})
             
             # Buscar usuario
             cur.execute("SELECT * FROM usuarios WHERE email=?", (email,))
@@ -195,7 +224,7 @@ def login():
     return render_template("login.html")
 
 
-# ================= REGISTER CORREGIDO =================
+# ================= REGISTER =================
 @app.route("/register", methods=["GET", "POST"])
 def register():
     print(f"📝 Register request - Method: {request.method}", file=sys.stderr)
@@ -247,14 +276,26 @@ def register():
     return render_template("register.html")
 
 
-# ================= RUTA DE PRUEBA PARA VERIFICAR SERVIDOR =================
+# ================= RUTA DE PRUEBA =================
 @app.route("/health")
 def health():
     """Ruta para verificar que el servidor está funcionando"""
-    return jsonify({"status": "ok", "message": "Servidor funcionando correctamente"})
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='usuarios'")
+    table_exists = cur.fetchone() is not None
+    conn.close()
+    
+    return jsonify({
+        "status": "ok", 
+        "message": "Servidor funcionando correctamente",
+        "db_tables": {
+            "usuarios": table_exists
+        }
+    })
 
 
-# ================= INDEX =================
+# ================= RESTO DE RUTAS =================
 @app.route("/index")
 def index():
     if "user_id" not in session:
@@ -282,7 +323,6 @@ def index():
                          total_valor=total_valor, producto_buscado=None)
 
 
-# ================= BUSCAR =================
 @app.route("/buscar_producto", methods=["POST"])
 def buscar_producto():
     if "user_id" not in session:
@@ -321,7 +361,6 @@ def buscar_producto():
                          producto_buscado=producto, total_valor=total_valor)
 
 
-# ================= AGREGAR PRODUCTO =================
 @app.route("/agregar_producto", methods=["POST"])
 def agregar_producto():
     if "user_id" not in session:
@@ -371,7 +410,6 @@ def agregar_producto():
     return redirect("/index")
 
 
-# ================= ELIMINAR PRODUCTO =================
 @app.route("/delete/<int:id>")
 def delete(id):
     if "user_id" not in session:
@@ -387,7 +425,6 @@ def delete(id):
     return redirect("/index")
 
 
-# ================= SUMAR STOCK =================
 @app.route("/sumar/<int:id>", methods=["POST"])
 def sumar(id):
     if "user_id" not in session:
@@ -419,7 +456,6 @@ def sumar(id):
     return redirect("/index")
 
 
-# ================= VENDER DESDE INDEX =================
 @app.route("/vender/<int:id>", methods=["POST"])
 def vender(id):
     if "user_id" not in session:
@@ -459,7 +495,6 @@ def vender(id):
     return redirect("/index")
 
 
-# ================= VENTAS =================
 @app.route("/ventas")
 def ventas():
     if "user_id" not in session:
@@ -485,7 +520,6 @@ def ventas():
     return render_template("ventas.html", productos=productos, ventas=ventas)
 
 
-# ================= REGISTRAR VENTA =================
 @app.route("/venta", methods=["POST"])
 def venta():
     if "user_id" not in session:
@@ -526,7 +560,6 @@ def venta():
     return redirect("/ventas")
 
 
-# ================= DASHBOARD =================
 @app.route("/dashboard")
 def dashboard():
     if "user_id" not in session:
@@ -568,7 +601,6 @@ def dashboard():
     )
 
 
-# ================= ADMIN =================
 @app.route("/admin")
 def admin():
     if "user_id" not in session:
@@ -591,7 +623,6 @@ def admin():
     return render_template("admin.html", usuarios=usuarios, inventarios=inventarios)
 
 
-# ================= CREAR USUARIO ADMIN =================
 @app.route("/crear_usuario_admin", methods=["POST"])
 def crear_usuario_admin():
     if "user_id" not in session or session.get("rol") != "admin":
@@ -626,7 +657,6 @@ def crear_usuario_admin():
     return redirect("/admin")
 
 
-# ================= ASIGNAR INVENTARIO =================
 @app.route("/asignar", methods=["POST"])
 def asignar_inventario():
     if "user_id" not in session or session.get("rol") != "admin":
@@ -645,7 +675,6 @@ def asignar_inventario():
     return redirect("/admin")
 
 
-# ================= CREAR INVENTARIO =================
 @app.route("/crear_inventario", methods=["POST"])
 def crear_inventario():
     if "user_id" not in session or session.get("rol") != "admin":
@@ -663,7 +692,6 @@ def crear_inventario():
     return redirect("/admin")
 
 
-# ================= MODIFICAR INVENTARIO =================
 @app.route("/modificar_inventario", methods=["POST"])
 def modificar_inventario():
     if "user_id" not in session or session.get("rol") != "admin":
@@ -682,7 +710,6 @@ def modificar_inventario():
     return redirect("/admin")
 
 
-# ================= ELIMINAR INVENTARIO =================
 @app.route("/eliminar_inventario", methods=["POST"])
 def eliminar_inventario():
     if "user_id" not in session or session.get("rol") != "admin":
@@ -714,7 +741,6 @@ def eliminar_inventario():
     return redirect("/admin")
 
 
-# ================= ELIMINAR USUARIO =================
 @app.route("/eliminar_usuario/<int:id>")
 def eliminar_usuario(id):
     if "user_id" not in session or session.get("rol") != "admin":
@@ -748,7 +774,6 @@ def eliminar_usuario(id):
     return redirect("/admin")
 
 
-# ================= REPORTE PDF =================
 @app.route("/reporte_pdf")
 def reporte_pdf():
     if "user_id" not in session:
@@ -781,7 +806,6 @@ def reporte_pdf():
     return send_file(buffer, as_attachment=True, download_name="reporte.pdf", mimetype='application/pdf')
 
 
-# ================= LOGOUT =================
 @app.route("/logout")
 def logout():
     session.clear()
@@ -790,6 +814,8 @@ def logout():
 
 # ================= MAIN =================
 if __name__ == "__main__":
+    # Forzar inicialización de la base de datos al inicio
+    print("🚀 Iniciando aplicación...", file=sys.stderr)
     init_db()
     
     print("\n" + "="*50, file=sys.stderr)
