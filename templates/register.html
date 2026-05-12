@@ -28,19 +28,41 @@
 </div>
 
 <script>
-function register(){
-    axios.post("/register", {
-        email: email.value,
-        password: password.value
-    }).then(res=>{
-        if(res.data.ok){
-            alert("Usuario creado correctamente ✅");
-            window.location="/login";
+async function register(){
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+    
+    if (!email || !password) {
+        alert('Por favor complete todos los campos');
+        return;
+    }
+    
+    try {
+        const response = await axios.post("/register", {
+            email: email,
+            password: password
+        });
+        
+        console.log('Respuesta:', response.data);
+        
+        if(response.data.ok){
+            alert(response.data.msg || "Usuario creado correctamente ✅");
+            window.location = "/login";
         } else {
-            alert(res.data.msg);
+            alert(response.data.msg || "Error al crear usuario");
         }
-    });
+    } catch(error) {
+        console.error('Error:', error);
+        alert('Error al conectar con el servidor');
+    }
 }
+
+// Permitir presionar Enter para enviar
+document.getElementById('password').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+        register();
+    }
+});
 </script>
 
 </body>
