@@ -447,6 +447,49 @@ def eliminar_usuario(id):
 
     return redirect("/admin")
 
+# ================= MODIFICAR INVENTARIO =================
+@app.route("/modificar_inventario", methods=["POST"])
+def modificar_inventario():
+    if "user_id" not in session or session.get("rol") != "admin":
+        return redirect("/login")
+
+    inv_id = request.form.get("id")
+    nuevo_nombre = request.form.get("nombre")
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE inventarios SET nombre=? WHERE id=?", (nuevo_nombre, inv_id))
+    conn.commit()
+    conn.close()
+
+    flash("✅ Inventario modificado")
+    return redirect("/admin")
+
+
+# ================= ELIMINAR INVENTARIO =================
+@app.route("/eliminar_inventario", methods=["POST"])
+def eliminar_inventario():
+    if "user_id" not in session or session.get("rol") != "admin":
+        return redirect("/login")
+
+    inv_id = request.form.get("id")
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    # Eliminar productos asociados
+    cur.execute("DELETE FROM productos WHERE inventario_id=?", (inv_id,))
+    # Eliminar usuarios asociados
+    cur.execute("DELETE FROM usuarios WHERE inventario_id=?", (inv_id,))
+    # Eliminar inventario
+    cur.execute("DELETE FROM inventarios WHERE id=?", (inv_id,))
+
+    conn.commit()
+    conn.close()
+
+    flash("✅ Inventario eliminado")
+    return redirect("/admin")
+
 
 # ================= REPORTE PDF =================
 @app.route("/reporte_pdf")
