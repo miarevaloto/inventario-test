@@ -465,7 +465,6 @@ def modificar_inventario():
     flash("✅ Inventario modificado")
     return redirect("/admin")
 
-
 # ================= ELIMINAR INVENTARIO =================
 @app.route("/eliminar_inventario", methods=["POST"])
 def eliminar_inventario():
@@ -489,7 +488,6 @@ def eliminar_inventario():
 
     flash("✅ Inventario eliminado")
     return redirect("/admin")
-
 
 # ================= REPORTE PDF =================
 @app.route("/reporte_pdf")
