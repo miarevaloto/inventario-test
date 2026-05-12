@@ -447,6 +447,47 @@ def eliminar_usuario(id):
 
     return redirect("/admin")
 
+# ================= CREAR USUARIO ADMIN =================
+@app.route("/crear_usuario_admin", methods=["POST"])
+def crear_usuario_admin():
+    if "user_id" not in session or session.get("rol") != "admin":
+        return redirect("/login")
+
+    nombre = request.form.get("nombre")
+    email = request.form.get("email")
+    password = request.form.get("password")
+    rol = request.form.get("rol")
+    inventario_id = request.form.get("inventario_id")
+    nuevo_inventario = request.form.get("nuevo_inventario")
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    # Si seleccionó "nuevo inventario", lo creamos primero
+    if inventario_id == "nuevo" and nuevo_inventario:
+        cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", (nuevo_inventario,))
+        inventario_id = cur.lastrowid
+
+    # Validar que el correo no exista
+    cur.execute("SELECT * FROM usuarios WHERE email=?", (email,))
+    if cur.fetchone():
+        conn.close()
+        flash("❌ El usuario ya existe")
+        return redirect("/admin")
+
+    # Insertar usuario
+    cur.execute("""
+        INSERT INTO usuarios (email, password, rol, inventario_id)
+        VALUES (?, ?, ?, ?)
+    """, (email, password, rol, inventario_id))
+
+    conn.commit()
+    conn.close()
+
+    flash("✅ Usuario creado correctamente")
+    return redirect("/admin")
+
+
 # ================= MODIFICAR INVENTARIO =================
 @app.route("/modificar_inventario", methods=["POST"])
 def modificar_inventario():
@@ -464,6 +505,7 @@ def modificar_inventario():
 
     flash("✅ Inventario modificado")
     return redirect("/admin")
+
 
 # ================= ELIMINAR INVENTARIO =================
 @app.route("/eliminar_inventario", methods=["POST"])
