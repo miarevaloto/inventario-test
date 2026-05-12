@@ -8,77 +8,27 @@ import sys
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "secret_key_for_render_production")
 
-# ================= DB MODIFICADA PARA RENDER =================
+# ================= DB =================
 def get_db():
-    """Usa /tmp/inventario.db en Render para permitir escritura"""
-    if os.environ.get("RENDER"):
-        db_path = '/tmp/inventario.db'
-    else:
-        db_path = 'inventario.db'
-    
+    """Usa inventario.db en el directorio del proyecto"""
+    db_path = os.path.join(os.getcwd(), 'inventario.db')
     print(f"📁 Usando base de datos en: {db_path}", file=sys.stderr)
-    
-    # Asegurar que el directorio existe
-    db_dir = os.path.dirname(db_path)
-    if db_dir and not os.path.exists(db_dir):
-        os.makedirs(db_dir)
-        print(f"📁 Directorio creado: {db_dir}", file=sys.stderr)
-    
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn
 
-
 def init_db():
-    """Inicializa la base de datos SOLO si las tablas no existen"""
+    """Inicializa la base solo si no existe"""
     try:
         conn = get_db()
         cur = conn.cursor()
-        
-        print("📝 Verificando base de datos...", file=sys.stderr)
 
-        # ========== VERIFICAR SI LAS TABLAS EXISTEN ==========
+        # Verificar si ya existe la tabla usuarios
         cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='usuarios'")
-        tabla_usuarios_existe = cur.fetchone() is not None
-        
-        if tabla_usuarios_existe:
-            # Las tablas ya existen, solo verificar datos
-            cur.execute("SELECT COUNT(*) as total FROM usuarios")
-            total_usuarios = cur.fetchone()["total"]
-            print(f"✅ Base de datos ya existe con {total_usuarios} usuarios", file=sys.stderr)
-            
-            # Verificar que los usuarios de prueba existen, si no, crearlos
-            usuarios_necesarios = [
-                ("admin@email.com", "admin123", "admin", "Administrador"),
-                ("repmotos@email.com", "123456", "usuario", "Repuestos Motos"),
-                ("test@email.com", "", "usuario", "Usuario Test")
-            ]
-            
-            for email, password, rol, nombre in usuarios_necesarios:
-                cur.execute("SELECT * FROM usuarios WHERE email=?", (email,))
-                if not cur.fetchone():
-                    # Usuario no existe, crearlo
-                    # Buscar o crear inventario
-                    cur.execute("SELECT id FROM inventarios LIMIT 1")
-                    inv = cur.fetchone()
-                    if inv:
-                        inv_id = inv[0]
-                    else:
-                        cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", ("Principal",))
-                        inv_id = cur.lastrowid
-                    
-                    cur.execute("""
-                        INSERT INTO usuarios (email, password, rol, nombre, inventario_id) 
-                        VALUES (?, ?, ?, ?, ?)
-                    """, (email, password, rol, nombre, inv_id))
-                    print(f"   ✅ Usuario faltante creado: {email}", file=sys.stderr)
-            
-            conn.commit()
+        if cur.fetchone():
+            print("✅ Base ya existe", file=sys.stderr)
             conn.close()
             return True
-        
-        # ========== SI NO EXISTEN TABLAS, CREAR TODO DESDE CERO ==========
-        print("📝 Creando tablas por primera vez...", file=sys.stderr)
 
         # Crear tablas
         cur.execute("""
@@ -91,14 +41,7 @@ def init_db():
             inventario_id INTEGER
         )
         """)
-
-        cur.execute("""
-        CREATE TABLE inventarios (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nombre TEXT NOT NULL
-        )
-        """)
-
+        cur.execute("CREATE TABLE inventarios (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT NOT NULL)")
         cur.execute("""
         CREATE TABLE productos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -109,7 +52,6 @@ def init_db():
             inventario_id INTEGER NOT NULL
         )
         """)
-
         cur.execute("""
         CREATE TABLE ventas (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -121,74 +63,24 @@ def init_db():
             inventario_id INTEGER
         )
         """)
-        
-        print("✅ Tablas creadas", file=sys.stderr)
 
-        # ========== CREAR DATOS DE PRUEBA ==========
-        print("📝 Creando datos iniciales...", file=sys.stderr)
-        
-        # Crear inventario principal
+        # Crear inventarios y usuarios de prueba
         cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", ("Principal",))
         inv_principal_id = cur.lastrowid
-        
-        # Crear inventario para repmotos
-        cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", ("repmotos",))
+        cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", ("Repmotos",))
         inv_repmotos_id = cur.lastrowid
-        
-        # Usuario Admin
-        cur.execute("""
-            INSERT INTO usuarios (email, password, rol, nombre, inventario_id) 
-            VALUES (?, ?, ?, ?, ?)
-        """, ("admin@email.com", "admin123", "admin", "Administrador", inv_principal_id))
-        
-        # Usuario Repmotos
-        cur.execute("""
-            INSERT INTO usuarios (email, password, rol, nombre, inventario_id) 
-            VALUES (?, ?, ?, ?, ?)
-        """, ("repmotos@email.com", "123456", "usuario", "Repuestos Motos", inv_repmotos_id))
-        
-        # Usuario Test
-        cur.execute("""
-            INSERT INTO usuarios (email, password, rol, nombre, inventario_id) 
-            VALUES (?, ?, ?, ?, ?)
-        """, ("test@email.com", "", "usuario", "Usuario Test", inv_principal_id))
-        
-        # Productos para repmotos
-        productos = [
-            ("Aceite 4T", "Lubricantes", 65, 25000.0),
-            ("Filtro de aire", "Repuestos", 20, 15000.0),
-            ("Bujía NGK", "Repuestos", 20, 10000.0),
-            ("Casco integral", "Accesorios", 15, 120000.0),
-            ("Guantes moto", "Accesorios", 25, 30000.0),
-            ("Cadena moto", "Transmisión", 20, 80000.0),
-            ("Kit arrastre", "Transmisión", 10, 150000.0),
-            ("Llanta delantera", "Llantas", 18, 90000.0),
-            ("Llanta trasera", "Llantas", 15, 110000.0),
-            ("Pastillas de freno", "Frenos", 35, 20000.0)
-        ]
-        
-        for nombre, categoria, cantidad, precio in productos:
-            cur.execute("""
-                INSERT INTO productos (nombre, categoria, cantidad, precio, inventario_id) 
-                VALUES (?, ?, ?, ?, ?)
-            """, (nombre, categoria, cantidad, precio, inv_repmotos_id))
-        
+
+        cur.execute("INSERT INTO usuarios (email,password,rol,nombre,inventario_id) VALUES (?,?,?,?,?)",
+                    ("admin@email.com","admin123","admin","Administrador",inv_principal_id))
+        cur.execute("INSERT INTO usuarios (email,password,rol,nombre,inventario_id) VALUES (?,?,?,?,?)",
+                    ("repmotos@email.com","123456","usuario","Repuestos Motos",inv_repmotos_id))
+        cur.execute("INSERT INTO usuarios (email,password,rol,nombre,inventario_id) VALUES (?,?,?,?,?)",
+                    ("test@email.com","","usuario","Usuario Test",inv_principal_id))
+
         conn.commit()
-        
-        # Verificar que todo se creó correctamente
-        cur.execute("SELECT COUNT(*) as total FROM usuarios")
-        total_usuarios = cur.fetchone()["total"]
-        cur.execute("SELECT COUNT(*) as total FROM productos")
-        total_productos = cur.fetchone()["total"]
-        
-        print(f"📊 Resumen:", file=sys.stderr)
-        print(f"   Usuarios creados: {total_usuarios}", file=sys.stderr)
-        print(f"   Productos creados: {total_productos}", file=sys.stderr)
-        
         conn.close()
-        print("✅ Base de datos inicializada con éxito", file=sys.stderr)
+        print("✅ Base creada con datos de prueba", file=sys.stderr)
         return True
-        
     except Exception as e:
         print(f"❌ Error en init_db: {str(e)}", file=sys.stderr)
         return False
