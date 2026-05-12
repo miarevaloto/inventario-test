@@ -93,19 +93,42 @@
 <!-- CREAR USUARIO -->
 <div class="card">
 <h2>➕ Crear Usuario</h2>
+
 <form method="POST" action="/crear_usuario_admin">
-<input type="email" name="email" required>
-<input type="password" name="password" required>
-<select name="rol">
-<option value="usuario">Usuario</option>
-<option value="admin">Admin</option>
-</select>
-<select name="inventario_id">
-{% for inv in inventarios %}
-<option value="{{inv['id']}}">{{inv['nombre']}}</option>
-{% endfor %}
-</select>
-<button class="btn btn-primary">Crear Usuario</button>
+
+    <!-- Nombre del usuario -->
+    <input type="text" name="nombre" placeholder="Nombre del usuario" required pattern="\S+.*" title="No se permiten espacios vacíos">
+
+    <!-- Correo del usuario -->
+    <input type="email" name="email" placeholder="Correo del usuario" required pattern="^[^\s@]+@[^\s@]+\.[^\s@]+$" title="Debe ser un correo válido y sin espacios">
+
+    <!-- Contraseña -->
+    <input type="password" name="password" placeholder="Contraseña" required pattern="\S+.*" title="No se permiten espacios vacíos">
+
+    <!-- Rol -->
+    <select name="rol" required>
+        <option value="">Seleccione rol</option>
+        <option value="usuario">Usuario</option>
+        <option value="admin">Admin</option>
+    </select>
+
+    <!-- Inventario -->
+    <select name="inventario_id" id="inventarioSelect" onchange="toggleNuevoInventario()" required>
+        <option value="">Seleccione inventario</option>
+        {% for inv in inventarios %}
+        <option value="{{inv['id']}}">{{inv['nombre']}}</option>
+        {% endfor %}
+        <option value="nuevo">➕ Nuevo inventario</option>
+    </select>
+
+    <!-- Campo para nuevo inventario -->
+    <input type="text" id="nuevoInventario" name="nuevo_inventario"
+           placeholder="Nombre del nuevo inventario"
+           style="display:none;"
+           pattern="\S+.*"
+           title="No se permiten espacios vacíos">
+
+    <button class="btn btn-primary">Crear Usuario</button>
 </form>
 </div>
 
@@ -137,7 +160,7 @@
 <div class="card">
 <h2>➕ Crear Inventario</h2>
 <form method="POST" action="/crear_inventario">
-<input type="text" name="nombre" placeholder="Nombre del inventario" required>
+<input type="text" name="nombre" placeholder="Nombre del inventario" required pattern="\S+.*" title="No se permiten espacios vacíos">
 <button class="btn btn-success">Crear Inventario</button>
 </form>
 </div>
@@ -152,7 +175,7 @@
     <p id="nombreInventarioModificar"></p>
     <form method="POST" action="/modificar_inventario">
       <input type="hidden" name="id" id="idInventarioModificar">
-      <input type="text" name="nombre" placeholder="Nuevo nombre" required>
+      <input type="text" name="nombre" placeholder="Nuevo nombre" required pattern="\S+.*" title="No se permiten espacios vacíos">
       <div style="margin-top:10px;">
         <button type="submit" class="btn btn-primary">Confirmar</button>
         <button type="button" onclick="cerrarModal('modalModificar')" class="btn btn-secondary">Cancelar</button>
@@ -196,6 +219,17 @@ window.onclick = function(event) {
     const modEliminar = document.getElementById("modalEliminar");
     if (event.target === modModificar) cerrarModal("modalModificar");
     if (event.target === modEliminar) cerrarModal("modalEliminar");
+}
+function toggleNuevoInventario() {
+    const select = document.getElementById("inventarioSelect");
+    const nuevo = document.getElementById("nuevoInventario");
+    if (select.value === "nuevo") {
+        nuevo.style.display = "block";
+        nuevo.required = true;
+    } else {
+        nuevo.style.display = "none";
+        nuevo.required = false;
+    }
 }
 </script>
 
