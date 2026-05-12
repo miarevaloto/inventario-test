@@ -27,18 +27,40 @@
 <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
 
 <script>
-function login(){
-    axios.post("/login", {
-        email: email.value,
-        password: password.value
-    }).then(res=>{
-        if(res.data.ok){
-            window.location.href = res.data.redirect;
+async function login(){
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+    
+    if (!email || !password) {
+        alert('Por favor ingrese correo y contraseña');
+        return;
+    }
+    
+    try {
+        const response = await axios.post("/login", {
+            email: email,
+            password: password
+        });
+        
+        console.log('Respuesta:', response.data); // Para depuración
+        
+        if(response.data.ok){
+            window.location.href = response.data.redirect;
         } else {
-            alert("Credenciales incorrectas");
+            alert(response.data.msg || "Credenciales incorrectas");
         }
-    });
+    } catch(error) {
+        console.error('Error:', error);
+        alert('Error al conectar con el servidor. Verifique que el servidor esté corriendo.');
+    }
 }
+
+// Permitir presionar Enter para enviar
+document.getElementById('password').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+        login();
+    }
+});
 </script>
 
 </body>
