@@ -53,9 +53,13 @@ def login():
         conn.close()
 
         if user:
-            session["user_id"] = user["id"]
-            session["rol"] = user["rol"]
-            session["inventario_id"] = user["inventario_id"]
+    session["user_id"] = user["id"]
+    session["rol"] = user["rol"]
+    session["inventario_id"] = user["inventario_id"]
+    session["nombre"] = user["email"]   # 👈 si no tienes campo nombre, usa el email
+    # si tu tabla usuarios tiene columna "nombre", usa:
+    # session["nombre"] = user["nombre"]
+
 
             return {"ok": True, "redirect": "/admin" if user["rol"] == "admin" else "/index"} \
                 if request.is_json else redirect("/admin" if user["rol"] == "admin" else "/index")
@@ -122,7 +126,11 @@ def index():
 
     conn.close()
 
-    return render_template("index.html", productos=productos, categorias=categorias)
+    return render_template("index.html",
+                       productos=productos,
+                       categorias=categorias,
+                       nombre=session.get("nombre"))
+
 
 
 # ================= BUSCAR =================
@@ -156,7 +164,12 @@ def buscar_producto():
 
     conn.close()
 
-    return render_template("index.html", productos=productos, categorias=categorias, producto_buscado=producto)
+    return render_template("index.html",
+                       productos=productos,
+                       categorias=categorias,
+                       producto_buscado=producto,
+                       nombre=session.get("nombre"))
+
 
 
 # ================= AGREGAR PRODUCTO =================
