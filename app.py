@@ -270,6 +270,23 @@ def vender(id):
     flash("✅ Venta realizada")
     return redirect("/index")
 
+# ================= ELIMINAR PRODUCTO =================
+@app.route("/delete/<int:id>")
+def delete_producto(id):
+    if "user_id" not in session:
+        return redirect("/login")
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    # Eliminar solo productos del inventario del usuario actual
+    cur.execute("DELETE FROM productos WHERE id=? AND inventario_id=?", (id, session["inventario_id"]))
+
+    conn.commit()
+    conn.close()
+
+    flash("✅ Producto eliminado")
+    return redirect("/index")
 
 # ================= VENTAS =================
 @app.route("/ventas")
