@@ -79,23 +79,36 @@ def init_db():
         fecha TEXT NOT NULL,
         inventario_id INTEGER NOT NULL)''')
 
-    # Crear usuario admin por defecto si no existe
-    cur.execute("SELECT * FROM usuarios WHERE email='admin@admin.com'")
-    if not cur.fetchone():
-        # Hash de la contraseña
+    # ========== NO BORRO TUS DATOS EXISTENTES ==========
+    # Solo creo el admin por defecto si NO EXISTE NINGÚN USUARIO
+    cur.execute("SELECT COUNT(*) as total FROM usuarios")
+    total_usuarios = cur.fetchone()["total"]
+    
+    if total_usuarios == 0:
+        # Solo si la tabla está completamente vacía, creo el admin
         password_hash = hashlib.sha256("admin123".encode()).hexdigest()
         cur.execute("INSERT INTO usuarios (email, password, rol, nombre) VALUES (?, ?, ?, ?)",
                     ("admin@admin.com", password_hash, "admin", "Administrador"))
-
-    # Crear inventario por defecto
-    cur.execute("SELECT * FROM inventarios WHERE nombre='Principal'")
-    if not cur.fetchone():
-        cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", ("Principal",))
         
-        # Asignar inventario al admin
-        cur.execute("SELECT id FROM inventarios WHERE nombre='Principal'")
-        inv_id = cur.fetchone()[0]
-        cur.execute("UPDATE usuarios SET inventario_id=? WHERE email='admin@admin.com'", (inv_id,))
+        # Crear inventario por defecto
+        cur.execute("SELECT * FROM inventarios WHERE nombre='Principal'")
+        if not cur.fetchone():
+            cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", ("Principal",))
+            
+            # Asignar inventario al admin
+            cur.execute("SELECT id FROM inventarios WHERE nombre='Principal'")
+            inv_id = cur.fetchone()[0]
+            cur.execute("UPDATE usuarios SET inventario_id=? WHERE email='admin@admin.com'", (inv_id,))
+    
+    # Crear inventario por defecto si no existe ninguno
+    cur.execute("SELECT COUNT(*) as total FROM inventarios")
+    total_inventarios = cur.fetchone()["total"]
+    
+    if total_inventarios == 0:
+        cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", ("Principal",))
+        inv_id = cur.lastrowid
+        # Asignar el inventario a los usuarios que no tengan
+        cur.execute("UPDATE usuarios SET inventario_id=? WHERE inventario_id IS NULL", (inv_id,))
 
     conn.commit()
     conn.close()
@@ -120,24 +133,40 @@ def login():
     if not email or not password:
         return jsonify({"ok": False, "msg": "Correo y contraseña requeridos"})
     
-    # Hash de la contraseña para comparar
-    password_hash = hashlib.sha256(password.encode()).hexdigest()
-    
+    # Para usuarios sin contraseña (como test@email.com)
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM usuarios WHERE email=? AND password=?", (email, password_hash))
+    
+    # Primero verifico si el usuario existe y tiene contraseña
+    cur.execute("SELECT * FROM usuarios WHERE email=?", (email,))
     user = cur.fetchone()
-    conn.close()
     
     if user:
-        session["user_id"] = user["id"]
-        session["email"] = user["email"]
-        session["rol"] = user["rol"]
-        session["nombre"] = user.get("nombre", user["email"])
-        session["inventario_id"] = user["inventario_id"]
-        return jsonify({"ok": True, "redirect": "/index"})
-    else:
-        return jsonify({"ok": False, "msg": "Credenciales incorrectas"})
+        # Si la contraseña está vacía en la BD o es NULL, permito acceso con cualquier contraseña
+        # (esto es para test@email.com)
+        if not user["password"] or user["password"] == "":
+            # Usuario de prueba sin contraseña
+            session["user_id"] = user["id"]
+            session["email"] = user["email"]
+            session["rol"] = user["rol"]
+            session["nombre"] = user.get("nombre", user["email"])
+            session["inventario_id"] = user["inventario_id"]
+            conn.close()
+            return jsonify({"ok": True, "redirect": "/index"})
+        else:
+            # Usuario normal con contraseña hasheada
+            password_hash = hashlib.sha256(password.encode()).hexdigest()
+            if user["password"] == password_hash:
+                session["user_id"] = user["id"]
+                session["email"] = user["email"]
+                session["rol"] = user["rol"]
+                session["nombre"] = user.get("nombre", user["email"])
+                session["inventario_id"] = user["inventario_id"]
+                conn.close()
+                return jsonify({"ok": True, "redirect": "/index"})
+    
+    conn.close()
+    return jsonify({"ok": False, "msg": "Credenciales incorrectas"})
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
@@ -160,8 +189,13 @@ def register():
     
     try:
         # Asignar inventario por defecto
-        cur.execute("SELECT id FROM inventarios WHERE nombre='Principal'")
-        inv_id = cur.fetchone()[0]
+        cur.execute("SELECT id FROM inventarios LIMIT 1")
+        inv_row = cur.fetchone()
+        if inv_row:
+            inv_id = inv_row[0]
+        else:
+            cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", ("Principal",))
+            inv_id = cur.lastrowid
         
         cur.execute("INSERT INTO usuarios (email, password, rol, nombre, inventario_id) VALUES (?, ?, ?, ?, ?)",
                     (email, password_hash, "usuario", email.split('@')[0], inv_id))
@@ -395,8 +429,14 @@ def eliminar_usuario(id):
     cur = conn.cursor()
     
     try:
-        cur.execute("SELECT inventario_id, nombre FROM usuarios WHERE id=?", (id,))
+        cur.execute("SELECT inventario_id, nombre, email FROM usuarios WHERE id=?", (id,))
         user = cur.fetchone()
+        
+        # Proteger usuarios importantes (repmotos@email.com y test@email.com)
+        if user and user["email"] in ["repmotos@email.com", "test@email.com"]:
+            flash(f"❌ No se puede eliminar al usuario {user['email']} porque es un usuario protegido", "error")
+            conn.close()
+            return redirect("/admin")
         
         if user and user["inventario_id"]:
             cur.execute("DELETE FROM productos WHERE inventario_id=?", (user["inventario_id"],))
