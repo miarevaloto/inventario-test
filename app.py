@@ -80,7 +80,7 @@ def init_db():
     
     conn.commit()
     conn.close()
-    print("✅ Base de datos verificada (tus datos existentes se conservan)")
+    print("✅ Base de datos SQLite verificada (tus datos existentes se conservan)")
 
 # ================= RUTAS DE AUTENTICACIÓN =================
 @app.route("/")
@@ -105,7 +105,7 @@ def login():
     conn = get_db()
     cur = conn.cursor()
     
-    # Buscar usuario - COMPARACIÓN DIRECTA (texto plano)
+    # Buscar usuario - COMPARACIÓN DIRECTA (texto plano como está en tu BD)
     cur.execute("SELECT * FROM usuarios WHERE email=?", (email,))
     user = cur.fetchone()
     
@@ -120,6 +120,17 @@ def login():
             conn.close()
             print(f"✅ Login exitoso: {email}")
             return jsonify({"ok": True, "redirect": "/index"})
+        else:
+            # Para test@email.com que tiene contraseña vacía
+            if email == "test@email.com":
+                session["user_id"] = user["id"]
+                session["email"] = user["email"]
+                session["rol"] = user["rol"]
+                session["nombre"] = user.get("nombre", user["email"])
+                session["inventario_id"] = user["inventario_id"]
+                conn.close()
+                print(f"✅ Login exitoso (usuario test): {email}")
+                return jsonify({"ok": True, "redirect": "/index"})
     
     conn.close()
     print(f"❌ Login fallido: {email}")
@@ -179,12 +190,18 @@ def index():
     cur.execute("SELECT DISTINCT categoria FROM productos WHERE inventario_id=?", (session["inventario_id"],))
     categorias = cur.fetchall()
     
+    # Calcular valor total del inventario
+    total_valor = 0
+    for p in productos:
+        total_valor += p["cantidad"] * p["precio"]
+    
     conn.close()
     
     return render_template("index.html", 
                          productos=productos, 
                          categorias=categorias,
-                         producto_buscado=None)
+                         producto_buscado=None,
+                         total_valor=total_valor)
 
 @app.route("/buscar_producto", methods=["POST"])
 @login_required
@@ -204,12 +221,18 @@ def buscar_producto():
     cur.execute("SELECT DISTINCT categoria FROM productos WHERE inventario_id=?", (session["inventario_id"],))
     categorias = cur.fetchall()
     
+    # Calcular valor total
+    total_valor = 0
+    for p in productos:
+        total_valor += p["cantidad"] * p["precio"]
+    
     conn.close()
     
     return render_template("index.html", 
                          productos=productos, 
                          categorias=categorias,
-                         producto_buscado=producto)
+                         producto_buscado=producto,
+                         total_valor=total_valor)
 
 @app.route("/agregar_producto", methods=["POST"])
 @login_required
@@ -283,6 +306,11 @@ def vender(id):
     # Verificar stock suficiente
     cur.execute("SELECT * FROM productos WHERE id=? AND inventario_id=?", (id, session["inventario_id"]))
     producto = cur.fetchone()
+    
+    if not producto:
+        flash("❌ Producto no encontrado", "error")
+        conn.close()
+        return redirect("/index")
     
     if producto["cantidad"] < cantidad:
         flash(f"❌ Stock insuficiente. Solo hay {producto['cantidad']} unidades", "error")
@@ -401,27 +429,27 @@ def eliminar_usuario(id):
         cur.execute("SELECT inventario_id, nombre, email FROM usuarios WHERE id=?", (id,))
         user = cur.fetchone()
         
-        # Proteger usuarios importantes
-        if user and user["email"] in ["admin@email.com", "repmotos@email.com", "test@email.com"]:
-            flash(f"❌ No se puede eliminar al usuario {user['email']} porque es un usuario del sistema", "error")
+        if not user:
+            flash("❌ Usuario no encontrado", "error")
             conn.close()
             return redirect("/admin")
         
-        if user and user["inventario_id"]:
-            # No eliminar productos si el inventario es compartido
-            cur.execute("SELECT COUNT(*) as total FROM usuarios WHERE inventario_id=?", (user["inventario_id"],))
+        # Verificar si el inventario es usado por otros usuarios
+        if user["inventario_id"]:
+            cur.execute("SELECT COUNT(*) as total FROM usuarios WHERE inventario_id=? AND id != ?", 
+                       (user["inventario_id"], id))
             otros_usuarios = cur.fetchone()["total"]
             
-            if otros_usuarios <= 1:  # Solo este usuario usa este inventario
+            if otros_usuarios == 0:  # Solo este usuario usa este inventario
                 cur.execute("DELETE FROM productos WHERE inventario_id=?", (user["inventario_id"],))
                 cur.execute("DELETE FROM inventarios WHERE id=?", (user["inventario_id"],))
         
         cur.execute("DELETE FROM usuarios WHERE id=?", (id,))
         conn.commit()
-        flash(f"✅ Usuario eliminado correctamente", "success")
+        flash(f"✅ Usuario '{user['email']}' eliminado correctamente", "success")
     except Exception as e:
         conn.rollback()
-        flash(f"❌ Error al eliminar usuario", "error")
+        flash(f"❌ Error al eliminar usuario: {str(e)}", "error")
     finally:
         conn.close()
     
@@ -596,7 +624,8 @@ def registrar_venta():
     conn.commit()
     conn.close()
     
-    flash(f"💰 Venta registrada: {cantidad} x {producto['nombre']}", "success")
+    total = cantidad * producto["precio"]
+    flash(f"💰 Venta registrada: {cantidad} x {producto['nombre']} = ${total:,.2f}", "success")
     return redirect("/ventas")
 
 # ================= REPORTE PDF =================
@@ -706,7 +735,7 @@ def reporte_pdf():
         buffer.seek(0)
         
         return send_file(buffer, as_attachment=True, 
-                        download_name="reporte_inventario.pdf", 
+                        download_name=f"reporte_inventario_{datetime.now().strftime('%Y%m%d')}.pdf", 
                         mimetype='application/pdf')
     except Exception as e:
         flash(f"❌ Error al generar PDF: {str(e)}", "error")
@@ -720,19 +749,61 @@ def logout():
 
 # ================= MAIN =================
 if __name__ == "__main__":
-    # Verificar base de datos existente
+    # Inicializar base de datos
     init_db()
     
-    # Mostrar información de usuarios
+    # Mostrar información de la base de datos
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT id, email, rol FROM usuarios")
+    
+    print("\n" + "="*50)
+    print("📊 ESTADO DE LA BASE DE DATOS SQLITE")
+    print("="*50)
+    
+    # Mostrar usuarios
+    cur.execute("SELECT id, email, rol, inventario_id FROM usuarios")
     usuarios = cur.fetchall()
-    print("\n📋 Usuarios en la base de datos:")
+    print("\n👥 USUARIOS:")
     for u in usuarios:
-        print(f"   - {u['email']} (ID: {u['id']}, Rol: {u['rol']})")
+        print(f"   ID: {u['id']} | Email: {u['email']} | Rol: {u['rol']} | Inventario ID: {u['inventario_id']}")
+    
+    # Mostrar inventarios
+    cur.execute("SELECT id, nombre FROM inventarios")
+    inventarios = cur.fetchall()
+    print("\n📦 INVENTARIOS:")
+    for inv in inventarios:
+        cur.execute("SELECT COUNT(*) FROM productos WHERE inventario_id=?", (inv['id'],))
+        num_productos = cur.fetchone()[0]
+        print(f"   ID: {inv['id']} | Nombre: {inv['nombre']} | Productos: {num_productos}")
+    
+    # Mostrar productos
+    cur.execute("SELECT COUNT(*) FROM productos")
+    total_productos = cur.fetchone()[0]
+    print(f"\n📦 TOTAL PRODUCTOS: {total_productos}")
+    
+    # Mostrar ventas
+    cur.execute("SELECT COUNT(*) FROM ventas")
+    total_ventas = cur.fetchone()[0]
+    print(f"💰 TOTAL VENTAS REGISTRADAS: {total_ventas}")
+    
     conn.close()
     
+    print("\n" + "="*50)
+    print("🚀 INICIANDO SERVIDOR")
+    print("="*50)
+    print("🔐 CREDENCIALES DE ACCESO:")
+    print("   📧 admin@email.com")
+    print("   🔑 Contraseña: admin123")
+    print("   👑 Rol: Administrador")
+    print("")
+    print("   📧 repmotos@email.com")
+    print("   🔑 Contraseña: 123456")
+    print("   👤 Rol: Usuario")
+    print("")
+    print("   📧 test@email.com")
+    print("   🔑 Contraseña: (cualquier texto o vacío)")
+    print("   🧪 Rol: Usuario de prueba")
+    print("="*50 + "\n")
+    
     port = int(os.environ.get("PORT", 5000))
-      
     app.run(host="0.0.0.0", port=port, debug=False)
