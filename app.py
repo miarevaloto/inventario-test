@@ -1,373 +1,580 @@
-from flask import Flask, render_template, request, redirect, session, flash, send_file, jsonify
+from flask import Flask, render_template, request, redirect, session, flash, send_file
+from reportlab.platypus import SimpleDocTemplate, Table
 import sqlite3
-import os
 import io
-from datetime import datetime
-from functools import wraps
+import os
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "tu_clave_secreta_aqui_cambiala_por_una_segura")
+app.secret_key = "secret"
 
-# ================= DECORADORES DE SEGURIDAD =================
-def login_required(f):
-    """Decorador para verificar que el usuario ha iniciado sesión"""
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if "user_id" not in session:
-            if request.is_json or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return jsonify({"ok": False, "msg": "No autorizado"}), 401
-            flash("🔒 Por favor, inicia sesión para acceder a esta página", "warning")
-            return redirect("/login")
-        return f(*args, **kwargs)
-    return decorated_function
 
-def role_required(required_role):
-    """Decorador para verificar roles de usuario"""
-    def decorator(f):
-        @wraps(f)
-        def decorated_function(*args, **kwargs):
-            if session.get("rol") != required_role:
-                if request.is_json or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                    return jsonify({"ok": False, "msg": "No tienes permisos"}), 403
-                flash("⛔ No tienes permisos para acceder a esta página", "error")
-                return redirect("/index")
-            return f(*args, **kwargs)
-        return decorated_function
-    return decorator
-
-# ================= FUNCIONES BD =================
+# ================= DB MODIFICADA PARA RENDER =================
 def get_db():
-    conn = sqlite3.connect('inventario.db')
+    """Usa /tmp/inventario.db en Render para permitir escritura"""
+    # Si estamos en Render, usar la carpeta /tmp (escribible)
+    if os.environ.get("RENDER"):
+        db_path = '/tmp/inventario.db'
+    else:
+        # Local: usar el archivo normal
+        db_path = 'inventario.db'
+    
+    conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn
 
+
 def init_db():
-    """Verifica que la base de datos exista, pero NO modifica tus datos existentes"""
     conn = get_db()
     cur = conn.cursor()
-    
-    # Solo crear tablas si no existen (NO borra datos)
-    cur.execute('''CREATE TABLE IF NOT EXISTS usuarios (
+
+    # Crear tablas si no existen
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS usuarios (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         email TEXT UNIQUE NOT NULL,
         password TEXT NOT NULL,
         rol TEXT NOT NULL DEFAULT 'usuario',
         nombre TEXT,
-        inventario_id INTEGER)''')
+        inventario_id INTEGER
+    )
+    """)
 
-    cur.execute('''CREATE TABLE IF NOT EXISTS inventarios (
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS inventarios (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nombre TEXT NOT NULL)''')
+        nombre TEXT NOT NULL
+    )
+    """)
 
-    cur.execute('''CREATE TABLE IF NOT EXISTS productos (
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS productos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         nombre TEXT NOT NULL,
         categoria TEXT NOT NULL,
         cantidad INTEGER NOT NULL,
         precio REAL NOT NULL,
-        iva REAL DEFAULT 0.19,
-        descuento REAL DEFAULT 0,
-        inventario_id INTEGER NOT NULL)''')
+        inventario_id INTEGER NOT NULL
+    )
+    """)
 
-    cur.execute('''CREATE TABLE IF NOT EXISTS ventas (
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS ventas (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        producto_id INTEGER NOT NULL,
-        producto TEXT NOT NULL,
-        cantidad INTEGER NOT NULL,
-        precio REAL NOT NULL,
-        fecha TEXT NOT NULL,
-        inventario_id INTEGER NOT NULL)''')
-    
-    conn.commit()
-    conn.close()
-    print("✅ Base de datos SQLite verificada (tus datos existentes se conservan)")
+        producto_id INTEGER,
+        producto TEXT,
+        cantidad INTEGER,
+        precio REAL,
+        fecha TEXT DEFAULT CURRENT_TIMESTAMP,
+        inventario_id INTEGER
+    )
+    """)
 
-# ================= RUTAS DE AUTENTICACIÓN =================
-@app.route("/")
-def home():
-    if "user_id" in session:
-        return redirect("/index")
-    return redirect("/login")
-
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if request.method == "GET":
-        return render_template("login.html")
+    # Verificar si hay usuarios, si no, crear los de prueba
+    cur.execute("SELECT COUNT(*) as total FROM usuarios")
+    total = cur.fetchone()["total"]
     
-    # POST - Login con AJAX
-    data = request.get_json()
-    email = data.get("email")
-    password = data.get("password")
-    
-    if not email or not password:
-        return jsonify({"ok": False, "msg": "Correo y contraseña requeridos"})
-    
-    conn = get_db()
-    cur = conn.cursor()
-    
-    # Buscar usuario - COMPARACIÓN DIRECTA (texto plano como está en tu BD)
-    cur.execute("SELECT * FROM usuarios WHERE email=?", (email,))
-    user = cur.fetchone()
-    
-    if user:
-        # Comparación directa de contraseñas (sin hash)
-        if user["password"] == password:
-            session["user_id"] = user["id"]
-            session["email"] = user["email"]
-            session["rol"] = user["rol"]
-            session["nombre"] = user.get("nombre", user["email"])
-            session["inventario_id"] = user["inventario_id"]
-            conn.close()
-            print(f"✅ Login exitoso: {email}")
-            return jsonify({"ok": True, "redirect": "/index"})
-        else:
-            # Para test@email.com que tiene contraseña vacía
-            if email == "test@email.com":
-                session["user_id"] = user["id"]
-                session["email"] = user["email"]
-                session["rol"] = user["rol"]
-                session["nombre"] = user.get("nombre", user["email"])
-                session["inventario_id"] = user["inventario_id"]
-                conn.close()
-                print(f"✅ Login exitoso (usuario test): {email}")
-                return jsonify({"ok": True, "redirect": "/index"})
-    
-    conn.close()
-    print(f"❌ Login fallido: {email}")
-    return jsonify({"ok": False, "msg": "Credenciales incorrectas"})
-
-@app.route("/register", methods=["GET", "POST"])
-def register():
-    if request.method == "GET":
-        return render_template("register.html")
-    
-    # POST - Register con AJAX
-    data = request.get_json()
-    email = data.get("email")
-    password = data.get("password")
-    
-    if not email or not password:
-        return jsonify({"ok": False, "msg": "Correo y contraseña requeridos"})
-    
-    conn = get_db()
-    cur = conn.cursor()
-    
-    try:
-        # Asignar inventario por defecto
-        cur.execute("SELECT id FROM inventarios LIMIT 1")
-        inv_row = cur.fetchone()
-        if inv_row:
-            inv_id = inv_row[0]
-        else:
-            cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", ("Principal",))
-            inv_id = cur.lastrowid
+    if total == 0:
+        print("📝 Creando usuarios de prueba...")
         
-        # Guardar contraseña en texto plano (como en tu BD existente)
+        # Crear inventario principal
+        cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", ("Principal",))
+        inv_principal_id = cur.lastrowid
+        
+        # Crear inventario para repmotos
+        cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", ("repmotos",))
+        inv_repmotos_id = cur.lastrowid
+        
+        # Usuario Admin
         cur.execute("""
             INSERT INTO usuarios (email, password, rol, nombre, inventario_id) 
             VALUES (?, ?, ?, ?, ?)
-        """, (email, password, "usuario", email.split('@')[0], inv_id))
-        conn.commit()
-        print(f"✅ Nuevo usuario registrado: {email}")
-        return jsonify({"ok": True, "msg": "Usuario creado exitosamente"})
-    except sqlite3.IntegrityError:
-        return jsonify({"ok": False, "msg": "El correo ya está registrado"})
-    finally:
+        """, ("admin@email.com", "admin123", "admin", "Administrador", inv_principal_id))
+        
+        # Usuario Repmotos
+        cur.execute("""
+            INSERT INTO usuarios (email, password, rol, nombre, inventario_id) 
+            VALUES (?, ?, ?, ?, ?)
+        """, ("repmotos@email.com", "123456", "usuario", "Repuestos Motos", inv_repmotos_id))
+        
+        # Usuario Test (sin contraseña - permite cualquier cosa)
+        cur.execute("""
+            INSERT INTO usuarios (email, password, rol, nombre, inventario_id) 
+            VALUES (?, ?, ?, ?, ?)
+        """, ("test@email.com", "", "usuario", "Usuario Test", inv_principal_id))
+        
+        # Productos para repmotos
+        productos = [
+            ("Aceite 4T", "Lubricantes", 65, 25000.0),
+            ("Filtro de aire", "Repuestos", 20, 15000.0),
+            ("Bujía NGK", "Repuestos", 20, 10000.0),
+            ("Casco integral", "Accesorios", 15, 120000.0),
+            ("Guantes moto", "Accesorios", 25, 30000.0),
+            ("Cadena moto", "Transmisión", 20, 80000.0),
+            ("Kit arrastre", "Transmisión", 10, 150000.0),
+            ("Llanta delantera", "Llantas", 18, 90000.0),
+            ("Llanta trasera", "Llantas", 15, 110000.0),
+            ("Pastillas de freno", "Frenos", 35, 20000.0)
+        ]
+        
+        for nombre, categoria, cantidad, precio in productos:
+            cur.execute("""
+                INSERT INTO productos (nombre, categoria, cantidad, precio, inventario_id) 
+                VALUES (?, ?, ?, ?, ?)
+            """, (nombre, categoria, cantidad, precio, inv_repmotos_id))
+        
+        print(f"✅ Creados: 3 usuarios, 2 inventarios, {len(productos)} productos")
+
+    conn.commit()
+    conn.close()
+    print("✅ Base de datos SQLite inicializada correctamente")
+
+
+# ================= LOGIN =================
+@app.route("/", methods=["GET","POST"])
+@app.route("/login", methods=["GET","POST"])
+def login():
+    if request.method == "POST":
+
+        if request.is_json:
+            data = request.get_json()
+            email = data.get("email")
+            password = data.get("password")
+        else:
+            email = request.form.get("email")
+            password = request.form.get("password")
+
+        conn = get_db()
+        cur = conn.cursor()
+
+        # Comparación directa (sin hash) - PERMITE espacios en blanco
+        cur.execute("SELECT * FROM usuarios WHERE email=?", (email,))
+        user = cur.fetchone()
+        
+        autenticado = False
+        if user:
+            # Si es test@email.com, acepta cualquier contraseña
+            if user["email"] == "test@email.com":
+                autenticado = True
+            # Si no, comparar contraseña directamente
+            elif user["password"] == password:
+                autenticado = True
+        
         conn.close()
 
-# ================= RUTAS PRINCIPALES =================
+        if autenticado:
+            session["user_id"] = user["id"]
+            session["rol"] = user["rol"]
+            session["inventario_id"] = user["inventario_id"]
+            session["email"] = user["email"]
+            session["nombre"] = user.get("nombre", user["email"])
+
+            if request.is_json:
+                return {"ok": True, "redirect": "/admin" if user["rol"] == "admin" else "/index"}
+            else:
+                return redirect("/admin" if user["rol"] == "admin" else "/index")
+
+        if request.is_json:
+            return {"ok": False, "msg": "Credenciales incorrectas"}
+        else:
+            flash("Credenciales incorrectas")
+            return redirect("/login")
+
+    return render_template("login.html")
+
+
+# ================= REGISTER =================
+# ⚠️ PERMITE espacios en blanco para pruebas de software
+@app.route("/register", methods=["GET","POST"])
+def register():
+    if request.method == "POST":
+
+        if request.is_json:
+            data = request.get_json()
+            email = data.get("email")
+            password = data.get("password")
+        else:
+            email = request.form.get("email")
+            password = request.form.get("password")
+
+        # ⚠️ SIN VALIDACIÓN de espacios - permitido para pruebas
+        conn = get_db()
+        cur = conn.cursor()
+
+        cur.execute("SELECT * FROM usuarios WHERE email=?", (email,))
+        if cur.fetchone():
+            conn.close()
+            if request.is_json:
+                return {"ok": False, "msg": "Usuario ya existe"}
+            else:
+                flash("Usuario ya existe")
+                return redirect("/register")
+
+        # Crear inventario para el nuevo usuario
+        cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", (f"Inventario de {email}",))
+        inventario_id = cur.lastrowid
+
+        cur.execute("""
+        INSERT INTO usuarios (email, password, rol, inventario_id, nombre)
+        VALUES (?, ?, 'usuario', ?, ?)
+        """, (email, password, inventario_id, email.split('@')[0] if '@' in email else email))
+
+        conn.commit()
+        conn.close()
+
+        if request.is_json:
+            return {"ok": True}
+        else:
+            flash("Usuario registrado exitosamente")
+            return redirect("/login")
+
+    return render_template("register.html")
+
+
+# ================= INDEX =================
 @app.route("/index")
-@login_required
 def index():
+    if "user_id" not in session:
+        return redirect("/login")
+
+    if session.get("rol") == "admin":
+        return redirect("/admin")
+
     conn = get_db()
     cur = conn.cursor()
-    
-    # Obtener productos del inventario del usuario
+
     cur.execute("SELECT * FROM productos WHERE inventario_id=?", (session["inventario_id"],))
     productos = cur.fetchall()
-    
-    # Obtener categorías únicas
+
     cur.execute("SELECT DISTINCT categoria FROM productos WHERE inventario_id=?", (session["inventario_id"],))
     categorias = cur.fetchall()
     
-    # Calcular valor total del inventario
+    # Calcular total del inventario
     total_valor = 0
     for p in productos:
         total_valor += p["cantidad"] * p["precio"]
-    
-    conn.close()
-    
-    return render_template("index.html", 
-                         productos=productos, 
-                         categorias=categorias,
-                         producto_buscado=None,
-                         total_valor=total_valor)
 
+    conn.close()
+
+    return render_template("index.html", productos=productos, categorias=categorias, 
+                         total_valor=total_valor, producto_buscado=None)
+
+
+# ================= BUSCAR =================
 @app.route("/buscar_producto", methods=["POST"])
-@login_required
 def buscar_producto():
-    producto_id = request.form["id"]
-    
+    if "user_id" not in session:
+        return redirect("/login")
+
+    try:
+        producto_id = int(request.form["id"])
+    except:
+        flash("❌ ID inválido")
+        return redirect("/index")
+
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM productos WHERE id=? AND inventario_id=?", 
-                (producto_id, session["inventario_id"]))
+
+    cur.execute("SELECT * FROM productos WHERE id=? AND inventario_id=?", (producto_id, session["inventario_id"]))
     producto = cur.fetchone()
-    
-    # Obtener todos los productos para la tabla
+
+    if not producto:
+        conn.close()
+        flash("❌ Producto no encontrado")
+        return redirect("/index")
+
     cur.execute("SELECT * FROM productos WHERE inventario_id=?", (session["inventario_id"],))
     productos = cur.fetchall()
-    
+
     cur.execute("SELECT DISTINCT categoria FROM productos WHERE inventario_id=?", (session["inventario_id"],))
     categorias = cur.fetchall()
     
-    # Calcular valor total
     total_valor = 0
     for p in productos:
         total_valor += p["cantidad"] * p["precio"]
-    
-    conn.close()
-    
-    return render_template("index.html", 
-                         productos=productos, 
-                         categorias=categorias,
-                         producto_buscado=producto,
-                         total_valor=total_valor)
 
+    conn.close()
+
+    return render_template("index.html", productos=productos, categorias=categorias, 
+                         producto_buscado=producto, total_valor=total_valor)
+
+
+# ================= AGREGAR PRODUCTO =================
 @app.route("/agregar_producto", methods=["POST"])
-@login_required
 def agregar_producto():
-    nombre = request.form["nombre"]
-    categoria_select = request.form["categoria_select"]
+    if "user_id" not in session:
+        return redirect("/login")
+
+    try:
+        precio = float(request.form["precio"])
+        cantidad = int(request.form["cantidad"])
+    except:
+        flash("❌ Datos inválidos")
+        return redirect("/index")
+
+    if precio <= 0 or cantidad <= 0:
+        flash("❌ Valores inválidos")
+        return redirect("/index")
+
+    # Obtener categoría
+    categoria_select = request.form.get("categoria_select", "")
     nueva_categoria = request.form.get("nueva_categoria", "")
-    cantidad = int(request.form["cantidad"])
-    precio = float(request.form["precio"])
     
-    # Determinar la categoría final
     if categoria_select == "nueva":
         categoria = nueva_categoria
     else:
         categoria = categoria_select
-    
+
     if not categoria:
-        flash("❌ Debes seleccionar o crear una categoría", "error")
+        flash("❌ Categoría inválida")
         return redirect("/index")
-    
+
     conn = get_db()
     cur = conn.cursor()
+
     cur.execute("""
-        INSERT INTO productos (nombre, categoria, cantidad, precio, inventario_id) 
+        INSERT INTO productos (nombre, categoria, precio, cantidad, inventario_id)
         VALUES (?, ?, ?, ?, ?)
-    """, (nombre, categoria, cantidad, precio, session["inventario_id"]))
+    """, (
+        request.form["nombre"],
+        categoria,
+        precio,
+        cantidad,
+        session["inventario_id"]
+    ))
+
     conn.commit()
     conn.close()
-    
-    flash(f"✅ Producto '{nombre}' agregado exitosamente", "success")
+
+    flash("✅ Producto agregado")
     return redirect("/index")
 
+
+# ================= ELIMINAR PRODUCTO =================
 @app.route("/delete/<int:id>")
-@login_required
 def delete(id):
+    if "user_id" not in session:
+        return redirect("/login")
+    
     conn = get_db()
     cur = conn.cursor()
     cur.execute("DELETE FROM productos WHERE id=? AND inventario_id=?", (id, session["inventario_id"]))
     conn.commit()
     conn.close()
     
-    flash("🗑️ Producto eliminado correctamente", "success")
+    flash("✅ Producto eliminado")
     return redirect("/index")
 
+
+# ================= SUMAR STOCK =================
 @app.route("/sumar/<int:id>", methods=["POST"])
-@login_required
 def sumar(id):
-    cantidad = int(request.form["cantidad"])
-    
+    if "user_id" not in session:
+        return redirect("/login")
+
+    try:
+        cantidad = int(request.form["cantidad"])
+    except:
+        flash("❌ Cantidad inválida")
+        return redirect("/index")
+
+    if cantidad <= 0:
+        flash("❌ Cantidad inválida")
+        return redirect("/index")
+
     conn = get_db()
     cur = conn.cursor()
+
     cur.execute("""
-        UPDATE productos 
-        SET cantidad = cantidad + ? 
-        WHERE id=? AND inventario_id=?
+    UPDATE productos
+    SET cantidad = cantidad + ?
+    WHERE id=? AND inventario_id=?
     """, (cantidad, id, session["inventario_id"]))
+
     conn.commit()
     conn.close()
-    
-    flash(f"✅ Se agregaron {cantidad} unidades al stock", "success")
+
+    flash("✅ Stock actualizado")
     return redirect("/index")
 
+
+# ================= VENDER DESDE INDEX =================
 @app.route("/vender/<int:id>", methods=["POST"])
-@login_required
 def vender(id):
-    cantidad = int(request.form["cantidad"])
-    
+    if "user_id" not in session:
+        return redirect("/login")
+
+    try:
+        cantidad = int(request.form["cantidad"])
+    except:
+        flash("❌ Datos inválidos")
+        return redirect("/index")
+
+    if cantidad <= 0:
+        flash("❌ Cantidad inválida")
+        return redirect("/index")
+
     conn = get_db()
     cur = conn.cursor()
-    
-    # Verificar stock suficiente
+
     cur.execute("SELECT * FROM productos WHERE id=? AND inventario_id=?", (id, session["inventario_id"]))
     producto = cur.fetchone()
-    
-    if not producto:
-        flash("❌ Producto no encontrado", "error")
+
+    if not producto or cantidad > producto["cantidad"]:
         conn.close()
+        flash("❌ Error en venta")
         return redirect("/index")
-    
-    if producto["cantidad"] < cantidad:
-        flash(f"❌ Stock insuficiente. Solo hay {producto['cantidad']} unidades", "error")
-        conn.close()
-        return redirect("/index")
-    
-    # Actualizar stock
-    cur.execute("""
-        UPDATE productos 
-        SET cantidad = cantidad - ? 
-        WHERE id=? AND inventario_id=?
-    """, (cantidad, id, session["inventario_id"]))
-    
-    # Registrar venta
-    fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    cur.execute("UPDATE productos SET cantidad = cantidad - ? WHERE id=?", (cantidad, id))
     cur.execute("""
         INSERT INTO ventas (producto_id, producto, cantidad, precio, fecha, inventario_id) 
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (id, producto["nombre"], cantidad, producto["precio"], fecha, session["inventario_id"]))
-    
+        VALUES (?, ?, ?, ?, datetime('now'), ?)
+    """, (id, producto["nombre"], cantidad, producto["precio"], session["inventario_id"]))
+
     conn.commit()
     conn.close()
-    
-    flash(f"💰 Venta realizada: {cantidad} x {producto['nombre']}", "success")
+
+    flash("✅ Venta realizada")
     return redirect("/index")
+
+
+# ================= VENTAS =================
+@app.route("/ventas")
+def ventas():
+    if "user_id" not in session:
+        return redirect("/login")
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("SELECT id, nombre, cantidad, precio FROM productos WHERE inventario_id=?", (session["inventario_id"],))
+    productos = cur.fetchall()
+
+    cur.execute("""
+        SELECT v.id, v.producto, v.cantidad, v.precio, v.fecha
+        FROM ventas v
+        WHERE v.inventario_id=?
+        ORDER BY v.id DESC
+        LIMIT 50
+    """, (session["inventario_id"],))
+    ventas = cur.fetchall()
+
+    conn.close()
+
+    return render_template("ventas.html", productos=productos, ventas=ventas)
+
+
+# ================= REGISTRAR VENTA =================
+@app.route("/venta", methods=["POST"])
+def venta():
+    if "user_id" not in session:
+        return redirect("/login")
+
+    try:
+        producto_id = int(request.form["producto_id"])
+        cantidad = int(request.form["cantidad"])
+    except:
+        flash("❌ Datos inválidos")
+        return redirect("/ventas")
+
+    if cantidad <= 0:
+        flash("❌ Cantidad inválida")
+        return redirect("/ventas")
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("SELECT * FROM productos WHERE id=? AND inventario_id=?", (producto_id, session["inventario_id"]))
+    producto = cur.fetchone()
+
+    if not producto or cantidad > producto["cantidad"]:
+        conn.close()
+        flash("❌ Error en venta")
+        return redirect("/ventas")
+
+    cur.execute("UPDATE productos SET cantidad = cantidad - ? WHERE id=?", (cantidad, producto_id))
+    cur.execute("""
+        INSERT INTO ventas (producto_id, producto, cantidad, precio, fecha, inventario_id) 
+        VALUES (?, ?, ?, ?, datetime('now'), ?)
+    """, (producto_id, producto["nombre"], cantidad, producto["precio"], session["inventario_id"]))
+
+    conn.commit()
+    conn.close()
+
+    flash("✅ Venta registrada")
+    return redirect("/ventas")
+
+
+# ================= DASHBOARD =================
+@app.route("/dashboard")
+def dashboard():
+    if "user_id" not in session:
+        return redirect("/login")
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("SELECT COUNT(*) as total FROM productos WHERE inventario_id=?", (session["inventario_id"],))
+    total_productos = cur.fetchone()["total"]
+
+    cur.execute("SELECT SUM(cantidad) as stock FROM productos WHERE inventario_id=?", (session["inventario_id"],))
+    stock_total = cur.fetchone()["stock"] or 0
+
+    cur.execute("""
+    SELECT SUM(cantidad * precio) as ventas
+    FROM ventas
+    WHERE inventario_id=?
+    """, (session["inventario_id"],))
+    ventas_total = cur.fetchone()["ventas"] or 0
+
+    cur.execute("""
+    SELECT producto, SUM(cantidad) as vendidos
+    FROM ventas
+    WHERE inventario_id=?
+    GROUP BY producto
+    ORDER BY vendidos DESC
+    LIMIT 5
+    """, (session["inventario_id"],))
+    top_productos = cur.fetchall()
+
+    conn.close()
+
+    return render_template("dashboard.html",
+        total_productos=total_productos,
+        stock_total=stock_total,
+        ventas_total=ventas_total,
+        top_productos=top_productos
+    )
+
 
 # ================= ADMIN =================
 @app.route("/admin")
-@login_required
-@role_required("admin")
 def admin():
+    if "user_id" not in session:
+        return redirect("/login")
+
+    if session.get("rol") != "admin":
+        return redirect("/index")
+
     conn = get_db()
     cur = conn.cursor()
-    
-    # Obtener usuarios
-    cur.execute("SELECT * FROM usuarios ORDER BY id")
-    usuarios = cur.fetchall()
-    
-    # Obtener inventarios
-    cur.execute("SELECT * FROM inventarios ORDER BY id")
-    inventarios = cur.fetchall()
-    
-    # Contar productos por inventario
-    for inv in inventarios:
-        cur.execute("SELECT COUNT(*) as total FROM productos WHERE inventario_id=?", (inv["id"],))
-        inv["total_productos"] = cur.fetchone()["total"]
-    
-    conn.close()
-    
-    return render_template("admin.html", 
-                         usuarios=usuarios, 
-                         inventarios=inventarios)
 
+    cur.execute("SELECT * FROM usuarios")
+    usuarios = cur.fetchall()
+
+    cur.execute("SELECT * FROM inventarios")
+    inventarios = cur.fetchall()
+
+    conn.close()
+
+    return render_template("admin.html", usuarios=usuarios, inventarios=inventarios)
+
+
+# ================= CREAR USUARIO ADMIN =================
 @app.route("/crear_usuario_admin", methods=["POST"])
-@login_required
-@role_required("admin")
 def crear_usuario_admin():
+    if "user_id" not in session or session.get("rol") != "admin":
+        return redirect("/login")
+    
     nombre = request.form["nombre"]
     email = request.form["email"]
     password = request.form["password"]
@@ -379,29 +586,30 @@ def crear_usuario_admin():
     cur = conn.cursor()
     
     try:
-        # Si se crea nuevo inventario
         if inventario_id == "nuevo" and nuevo_inventario:
             cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", (nuevo_inventario,))
             inventario_id = cur.lastrowid
         
-        # Guardar contraseña en texto plano
         cur.execute("""
             INSERT INTO usuarios (nombre, email, password, rol, inventario_id) 
             VALUES (?, ?, ?, ?, ?)
         """, (nombre, email, password, rol, inventario_id))
         conn.commit()
-        flash(f"✅ Usuario '{email}' creado exitosamente", "success")
+        flash("✅ Usuario creado exitosamente")
     except sqlite3.IntegrityError:
-        flash("❌ El correo ya está registrado", "error")
+        flash("❌ El correo ya está registrado")
     finally:
         conn.close()
     
     return redirect("/admin")
 
+
+# ================= ASIGNAR INVENTARIO =================
 @app.route("/asignar", methods=["POST"])
-@login_required
-@role_required("admin")
 def asignar_inventario():
+    if "user_id" not in session or session.get("rol") != "admin":
+        return redirect("/login")
+    
     user_id = request.form["user_id"]
     inventario_id = request.form["inventario_id"]
     
@@ -411,54 +619,16 @@ def asignar_inventario():
     conn.commit()
     conn.close()
     
-    flash("✅ Inventario asignado correctamente", "success")
+    flash("✅ Inventario asignado correctamente")
     return redirect("/admin")
 
-@app.route("/eliminar_usuario/<int:id>")
-@login_required
-@role_required("admin")
-def eliminar_usuario(id):
-    if id == session["user_id"]:
-        flash("❌ No puedes eliminarte a ti mismo", "error")
-        return redirect("/admin")
-    
-    conn = get_db()
-    cur = conn.cursor()
-    
-    try:
-        cur.execute("SELECT inventario_id, nombre, email FROM usuarios WHERE id=?", (id,))
-        user = cur.fetchone()
-        
-        if not user:
-            flash("❌ Usuario no encontrado", "error")
-            conn.close()
-            return redirect("/admin")
-        
-        # Verificar si el inventario es usado por otros usuarios
-        if user["inventario_id"]:
-            cur.execute("SELECT COUNT(*) as total FROM usuarios WHERE inventario_id=? AND id != ?", 
-                       (user["inventario_id"], id))
-            otros_usuarios = cur.fetchone()["total"]
-            
-            if otros_usuarios == 0:  # Solo este usuario usa este inventario
-                cur.execute("DELETE FROM productos WHERE inventario_id=?", (user["inventario_id"],))
-                cur.execute("DELETE FROM inventarios WHERE id=?", (user["inventario_id"],))
-        
-        cur.execute("DELETE FROM usuarios WHERE id=?", (id,))
-        conn.commit()
-        flash(f"✅ Usuario '{user['email']}' eliminado correctamente", "success")
-    except Exception as e:
-        conn.rollback()
-        flash(f"❌ Error al eliminar usuario: {str(e)}", "error")
-    finally:
-        conn.close()
-    
-    return redirect("/admin")
 
+# ================= CREAR INVENTARIO =================
 @app.route("/crear_inventario", methods=["POST"])
-@login_required
-@role_required("admin")
 def crear_inventario():
+    if "user_id" not in session or session.get("rol") != "admin":
+        return redirect("/login")
+    
     nombre = request.form["nombre"]
     
     conn = get_db()
@@ -467,13 +637,16 @@ def crear_inventario():
     conn.commit()
     conn.close()
     
-    flash(f"✅ Inventario '{nombre}' creado exitosamente", "success")
+    flash(f"✅ Inventario '{nombre}' creado exitosamente")
     return redirect("/admin")
 
+
+# ================= MODIFICAR INVENTARIO =================
 @app.route("/modificar_inventario", methods=["POST"])
-@login_required
-@role_required("admin")
 def modificar_inventario():
+    if "user_id" not in session or session.get("rol") != "admin":
+        return redirect("/login")
+    
     inventario_id = request.form["id"]
     nombre = request.form["nombre"]
     
@@ -483,263 +656,109 @@ def modificar_inventario():
     conn.commit()
     conn.close()
     
-    flash(f"✅ Inventario modificado exitosamente", "success")
+    flash("✅ Inventario modificado exitosamente")
     return redirect("/admin")
 
+
+# ================= ELIMINAR INVENTARIO =================
 @app.route("/eliminar_inventario", methods=["POST"])
-@login_required
-@role_required("admin")
 def eliminar_inventario():
+    if "user_id" not in session or session.get("rol") != "admin":
+        return redirect("/login")
+    
     inventario_id = request.form["id"]
     
     conn = get_db()
     cur = conn.cursor()
     
     try:
-        # Verificar si hay usuarios usando este inventario
-        cur.execute("SELECT COUNT(*) as total FROM usuarios WHERE inventario_id=?", (inventario_id,))
-        usuarios_usando = cur.fetchone()["total"]
-        
-        if usuarios_usando > 0:
-            flash(f"❌ No se puede eliminar el inventario porque lo usan {usuarios_usando} usuario(s)", "error")
-            conn.close()
-            return redirect("/admin")
-        
-        # Verificar si el inventario tiene productos
         cur.execute("SELECT COUNT(*) as total FROM productos WHERE inventario_id=?", (inventario_id,))
         total = cur.fetchone()["total"]
         
         if total > 0:
-            flash(f"❌ No se puede eliminar el inventario porque tiene {total} productos asociados", "error")
+            flash(f"❌ No se puede eliminar el inventario porque tiene {total} productos")
             conn.close()
             return redirect("/admin")
         
         cur.execute("DELETE FROM inventarios WHERE id=?", (inventario_id,))
         conn.commit()
-        flash(f"✅ Inventario eliminado exitosamente", "success")
+        flash("✅ Inventario eliminado exitosamente")
     except Exception as e:
         conn.rollback()
-        flash(f"❌ Error al eliminar inventario", "error")
+        flash("❌ Error al eliminar inventario")
     finally:
         conn.close()
     
     return redirect("/admin")
 
-# ================= DASHBOARD =================
-@app.route("/dashboard")
-@login_required
-def dashboard():
-    conn = get_db()
-    cur = conn.cursor()
-    
-    # Total de productos
-    cur.execute("SELECT COUNT(*) as total FROM productos WHERE inventario_id=?", (session["inventario_id"],))
-    total_productos = cur.fetchone()["total"]
-    
-    # Stock total
-    cur.execute("SELECT SUM(cantidad) as total FROM productos WHERE inventario_id=?", (session["inventario_id"],))
-    stock_total = cur.fetchone()["total"] or 0
-    
-    # Ventas totales
-    cur.execute("SELECT SUM(cantidad * precio) as total FROM ventas WHERE inventario_id=?", (session["inventario_id"],))
-    ventas_total = cur.fetchone()["total"] or 0
-    
-    # Top productos más vendidos
-    cur.execute("""
-        SELECT producto, SUM(cantidad) as vendidos 
-        FROM ventas 
-        WHERE inventario_id=?
-        GROUP BY producto 
-        ORDER BY vendidos DESC 
-        LIMIT 5
-    """, (session["inventario_id"],))
-    top_productos = cur.fetchall()
-    
-    conn.close()
-    
-    return render_template("dashboard.html", 
-                         total_productos=total_productos,
-                         stock_total=stock_total,
-                         ventas_total=ventas_total,
-                         top_productos=top_productos)
 
-# ================= VENTAS =================
-@app.route("/ventas")
-@login_required
-def ventas():
-    conn = get_db()
-    cur = conn.cursor()
-    
-    # Obtener productos para el selector
-    cur.execute("SELECT id, nombre, cantidad, precio FROM productos WHERE inventario_id=?", (session["inventario_id"],))
-    productos = cur.fetchall()
-    
-    # Obtener historial de ventas
-    cur.execute("""
-        SELECT v.* 
-        FROM ventas v
-        WHERE v.inventario_id=?
-        ORDER BY v.id DESC
-        LIMIT 50
-    """, (session["inventario_id"],))
-    ventas_list = cur.fetchall()
-    
-    conn.close()
-    
-    return render_template("ventas.html", 
-                         productos=productos,
-                         ventas=ventas_list)
+# ================= ELIMINAR USUARIO =================
+@app.route("/eliminar_usuario/<int:id>")
+def eliminar_usuario(id):
+    if "user_id" not in session or session.get("rol") != "admin":
+        return redirect("/login")
 
-@app.route("/venta", methods=["POST"])
-@login_required
-def registrar_venta():
-    producto_id = request.form["producto_id"]
-    cantidad = int(request.form["cantidad"])
-    
     conn = get_db()
     cur = conn.cursor()
-    
-    # Verificar producto y stock
-    cur.execute("SELECT * FROM productos WHERE id=? AND inventario_id=?", (producto_id, session["inventario_id"]))
-    producto = cur.fetchone()
-    
-    if not producto:
-        flash("❌ Producto no encontrado", "error")
-        return redirect("/ventas")
-    
-    if producto["cantidad"] < cantidad:
-        flash(f"❌ Stock insuficiente. Solo hay {producto['cantidad']} unidades", "error")
-        return redirect("/ventas")
-    
-    # Actualizar stock
-    cur.execute("UPDATE productos SET cantidad = cantidad - ? WHERE id=?", (cantidad, producto_id))
-    
-    # Registrar venta
-    fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    cur.execute("""
-        INSERT INTO ventas (producto_id, producto, cantidad, precio, fecha, inventario_id) 
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (producto_id, producto["nombre"], cantidad, producto["precio"], fecha, session["inventario_id"]))
-    
+
+    if id == session["user_id"]:
+        flash("❌ No puedes eliminarte")
+        conn.close()
+        return redirect("/admin")
+
+    cur.execute("SELECT inventario_id, email FROM usuarios WHERE id=?", (id,))
+    user = cur.fetchone()
+
+    if user:
+        # Verificar si otros usuarios usan el mismo inventario
+        cur.execute("SELECT COUNT(*) as total FROM usuarios WHERE inventario_id=?", (user["inventario_id"],))
+        otros = cur.fetchone()["total"]
+        
+        if otros <= 1:  # Solo este usuario
+            cur.execute("DELETE FROM productos WHERE inventario_id=?", (user["inventario_id"],))
+            cur.execute("DELETE FROM inventarios WHERE id=?", (user["inventario_id"],))
+
+    cur.execute("DELETE FROM usuarios WHERE id=?", (id,))
+
     conn.commit()
     conn.close()
-    
-    total = cantidad * producto["precio"]
-    flash(f"💰 Venta registrada: {cantidad} x {producto['nombre']} = ${total:,.2f}", "success")
-    return redirect("/ventas")
+
+    flash("✅ Usuario eliminado")
+    return redirect("/admin")
+
 
 # ================= REPORTE PDF =================
 @app.route("/reporte_pdf")
-@login_required
 def reporte_pdf():
-    try:
-        from reportlab.lib.pagesizes import letter
-        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.lib.enums import TA_CENTER
-        from reportlab.lib import colors
-        
-        buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=letter)
-        
-        styles = getSampleStyleSheet()
-        title_style = ParagraphStyle(
-            'CustomTitle',
-            parent=styles['Title'],
-            alignment=TA_CENTER,
-            fontSize=16
-        )
-        
-        story = []
-        
-        # Título
-        story.append(Paragraph("Reporte de Inventario", title_style))
-        story.append(Spacer(1, 12))
-        
-        # Fecha y usuario
-        fecha = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-        story.append(Paragraph(f"Generado por: {session.get('nombre', 'Usuario')}", styles['Normal']))
-        story.append(Paragraph(f"Fecha: {fecha}", styles['Normal']))
-        story.append(Spacer(1, 12))
-        
-        conn = get_db()
-        cur = conn.cursor()
-        
-        # Obtener información del inventario
-        cur.execute("""
-            SELECT i.nombre as inventario_nombre, COUNT(p.id) as total_productos,
-                   COALESCE(SUM(p.cantidad * p.precio), 0) as valor_total
-            FROM inventarios i
-            LEFT JOIN productos p ON i.id = p.inventario_id
-            WHERE i.id = ?
-            GROUP BY i.id
-        """, (session["inventario_id"],))
-        
-        inventario_info = cur.fetchone()
-        if inventario_info:
-            story.append(Paragraph(f"Inventario: {inventario_info['inventario_nombre']}", styles['Normal']))
-            story.append(Paragraph(f"Total Productos: {inventario_info['total_productos'] or 0}", styles['Normal']))
-            story.append(Paragraph(f"Valor Total: ${inventario_info['valor_total']:,.2f}", styles['Normal']))
-            story.append(Spacer(1, 12))
-        
-        # Obtener productos
-        cur.execute("""
-            SELECT nombre, categoria, cantidad, precio, 
-                   (cantidad * precio) as valor_total
-            FROM productos
-            WHERE inventario_id=?
-            ORDER BY categoria, nombre
-        """, (session["inventario_id"],))
-        
-        products = cur.fetchall()
-        
-        if products:
-            data = [["Nombre", "Categoría", "Cantidad", "Precio Unitario", "Valor Total"]]
-            
-            total_general = 0
-            for row in products:
-                valor = row["cantidad"] * row["precio"]
-                total_general += valor
-                data.append([
-                    row["nombre"], 
-                    row["categoria"], 
-                    f"{row['cantidad']:,}", 
-                    f"${row['precio']:,.2f}", 
-                    f"${valor:,.2f}"
-                ])
-            
-            data.append(["", "", "", "TOTAL:", f"${total_general:,.2f}"])
-            
-            table = Table(data)
-            table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('ALIGN', (3, 1), (-1, -1), 'RIGHT'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 10),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                ('BACKGROUND', (0, -1), (-1, -1), colors.beige),
-                ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
-                ('GRID', (0, 0), (-1, -2), 1, colors.black),
-                ('BOX', (0, 0), (-1, -1), 2, colors.black),
-            ]))
-            
-            story.append(table)
-        else:
-            story.append(Paragraph("No hay productos en este inventario", styles['Normal']))
-        
-        conn.close()
-        
-        doc.build(story)
-        buffer.seek(0)
-        
-        return send_file(buffer, as_attachment=True, 
-                        download_name=f"reporte_inventario_{datetime.now().strftime('%Y%m%d')}.pdf", 
-                        mimetype='application/pdf')
-    except Exception as e:
-        flash(f"❌ Error al generar PDF: {str(e)}", "error")
-        return redirect("/index")
+    if "user_id" not in session:
+        return redirect("/login")
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer)
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+    SELECT nombre, categoria, cantidad, precio
+    FROM productos
+    WHERE inventario_id=?
+    """, (session["inventario_id"],))
+
+    data = [["Nombre", "Categoría", "Cantidad", "Precio"]]
+
+    for row in cur.fetchall():
+        data.append([row["nombre"], row["categoria"], row["cantidad"], f"${row['precio']:,.2f}"])
+
+    conn.close()
+
+    table = Table(data)
+    doc.build([table])
+
+    buffer.seek(0)
+
+    return send_file(buffer, as_attachment=True, download_name="reporte.pdf", mimetype='application/pdf')
+
 
 # ================= LOGOUT =================
 @app.route("/logout")
@@ -747,62 +766,19 @@ def logout():
     session.clear()
     return redirect("/login")
 
+
 # ================= MAIN =================
 if __name__ == "__main__":
-    # Inicializar base de datos
     init_db()
     
-    # Mostrar información de la base de datos
-    conn = get_db()
-    cur = conn.cursor()
-    
     print("\n" + "="*50)
-    print("📊 ESTADO DE LA BASE DE DATOS SQLITE")
+    print("🚀 APLICACIÓN INICIADA")
     print("="*50)
-    
-    # Mostrar usuarios
-    cur.execute("SELECT id, email, rol, inventario_id FROM usuarios")
-    usuarios = cur.fetchall()
-    print("\n👥 USUARIOS:")
-    for u in usuarios:
-        print(f"   ID: {u['id']} | Email: {u['email']} | Rol: {u['rol']} | Inventario ID: {u['inventario_id']}")
-    
-    # Mostrar inventarios
-    cur.execute("SELECT id, nombre FROM inventarios")
-    inventarios = cur.fetchall()
-    print("\n📦 INVENTARIOS:")
-    for inv in inventarios:
-        cur.execute("SELECT COUNT(*) FROM productos WHERE inventario_id=?", (inv['id'],))
-        num_productos = cur.fetchone()[0]
-        print(f"   ID: {inv['id']} | Nombre: {inv['nombre']} | Productos: {num_productos}")
-    
-    # Mostrar productos
-    cur.execute("SELECT COUNT(*) FROM productos")
-    total_productos = cur.fetchone()[0]
-    print(f"\n📦 TOTAL PRODUCTOS: {total_productos}")
-    
-    # Mostrar ventas
-    cur.execute("SELECT COUNT(*) FROM ventas")
-    total_ventas = cur.fetchone()[0]
-    print(f"💰 TOTAL VENTAS REGISTRADAS: {total_ventas}")
-    
-    conn.close()
-    
-    print("\n" + "="*50)
-    print("🚀 INICIANDO SERVIDOR")
-    print("="*50)
-    print("🔐 CREDENCIALES DE ACCESO:")
-    print("   📧 admin@email.com")
-    print("   🔑 Contraseña: admin123")
-    print("   👑 Rol: Administrador")
-    print("")
-    print("   📧 repmotos@email.com")
-    print("   🔑 Contraseña: 123456")
-    print("   👤 Rol: Usuario")
-    print("")
-    print("   📧 test@email.com")
-    print("   🔑 Contraseña: (cualquier texto o vacío)")
-    print("   🧪 Rol: Usuario de prueba")
+    print("📁 Base de datos:", "/tmp/inventario.db" if os.environ.get("RENDER") else "inventario.db")
+    print("🔐 CREDENCIALES DE PRUEBA:")
+    print("   admin@email.com / admin123")
+    print("   repmotos@email.com / 123456")
+    print("   test@email.com / (cualquier contraseña)")
     print("="*50 + "\n")
     
     port = int(os.environ.get("PORT", 5000))
