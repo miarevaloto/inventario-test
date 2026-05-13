@@ -397,7 +397,7 @@ def sumar(id):
     return redirect("/index")
 
 
-# ================= VENDER DESDE INDEX (CORREGIDO) =================
+# ================= VENDER DESDE INDEX =================
 @app.route("/vender/<int:id>", methods=["POST"])
 def vender(id):
     if "user_id" not in session:
@@ -406,7 +406,7 @@ def vender(id):
     try:
         cantidad = int(request.form["cantidad"])
     except:
-        flash("❌ Cantidad inválida")
+        flash("❌ Datos inválidos")
         return redirect("/index")
 
     if cantidad <= 0:
@@ -424,12 +424,8 @@ def vender(id):
         flash("❌ Error en venta")
         return redirect("/index")
 
-    # CORREGIDO: Insertar venta con todos los datos necesarios
-    cur.execute("UPDATE productos SET cantidad = cantidad - ? WHERE id=?", (cantidad, id))
-    cur.execute("""
-        INSERT INTO ventas (producto_id, producto, cantidad, precio, fecha, inventario_id) 
-        VALUES (?, ?, ?, ?, datetime('now'), ?)
-    """, (id, producto["nombre"], cantidad, producto["precio"], session["inventario_id"]))
+    cur.execute("UPDATE productos SET cantidad = cantidad - ? WHERE id=?", (cantidad,id))
+    cur.execute("INSERT INTO ventas (producto_id,cantidad) VALUES (?,?)", (id,cantidad))
 
     conn.commit()
     conn.close()
@@ -438,7 +434,7 @@ def vender(id):
     return redirect("/index")
 
 
-# ================= VENTAS (CORREGIDO) =================
+# ================= VENTAS =================
 @app.route("/ventas")
 def ventas():
     if "user_id" not in session:
@@ -447,25 +443,24 @@ def ventas():
     conn = get_db()
     cur = conn.cursor()
 
-    cur.execute("SELECT id, nombre, cantidad, precio FROM productos WHERE inventario_id=?", (session["inventario_id"],))
+    cur.execute("SELECT * FROM productos WHERE inventario_id=?", (session["inventario_id"],))
     productos = cur.fetchall()
 
-    # CORREGIDO: Usar la tabla ventas directamente (ya tiene la columna producto)
     cur.execute("""
-        SELECT v.id, v.producto, v.cantidad, v.precio, v.fecha
+        SELECT v.id, p.nombre as producto, v.cantidad
         FROM ventas v
-        WHERE v.inventario_id=?
+        JOIN productos p ON v.producto_id = p.id
+        WHERE p.inventario_id=?
         ORDER BY v.id DESC
-        LIMIT 50
     """, (session["inventario_id"],))
-    ventas_list = cur.fetchall()
+    ventas = cur.fetchall()
 
     conn.close()
 
-    return render_template("ventas.html", productos=productos, ventas=ventas_list)
+    return render_template("ventas.html", productos=productos, ventas=ventas)
 
 
-# ================= REGISTRAR VENTA (CORREGIDO) =================
+# ================= REGISTRAR VENTA =================
 @app.route("/venta", methods=["POST"])
 def venta():
     if "user_id" not in session:
@@ -493,12 +488,8 @@ def venta():
         flash("❌ Error en venta")
         return redirect("/ventas")
 
-    # CORREGIDO: Insertar venta con todos los datos necesarios
     cur.execute("UPDATE productos SET cantidad = cantidad - ? WHERE id=?", (cantidad, producto_id))
-    cur.execute("""
-        INSERT INTO ventas (producto_id, producto, cantidad, precio, fecha, inventario_id) 
-        VALUES (?, ?, ?, ?, datetime('now'), ?)
-    """, (producto_id, producto["nombre"], cantidad, producto["precio"], session["inventario_id"]))
+    cur.execute("INSERT INTO ventas (producto_id, cantidad) VALUES (?, ?)", (producto_id, cantidad))
 
     conn.commit()
     conn.close()
@@ -507,7 +498,7 @@ def venta():
     return redirect("/ventas")
 
 
-# ================= DASHBOARD (CORREGIDO) =================
+# ================= DASHBOARD =================
 @app.route("/dashboard")
 def dashboard():
     if "user_id" not in session:
@@ -522,22 +513,22 @@ def dashboard():
     cur.execute("SELECT SUM(cantidad) as stock FROM productos WHERE inventario_id=?", (session["inventario_id"],))
     stock_total = cur.fetchone()["stock"] or 0
 
-    # CORREGIDO: Usar la tabla ventas directamente (sin JOIN)
     cur.execute("""
-        SELECT SUM(cantidad * precio) as ventas
-        FROM ventas
-        WHERE inventario_id=?
+    SELECT SUM(v.cantidad * p.precio) as ventas
+    FROM ventas v
+    JOIN productos p ON v.producto_id = p.id
+    WHERE p.inventario_id=?
     """, (session["inventario_id"],))
     ventas_total = cur.fetchone()["ventas"] or 0
 
-    # CORREGIDO: Top productos desde la tabla ventas
     cur.execute("""
-        SELECT producto, SUM(cantidad) as vendidos
-        FROM ventas
-        WHERE inventario_id=?
-        GROUP BY producto
-        ORDER BY vendidos DESC
-        LIMIT 5
+    SELECT p.nombre, SUM(v.cantidad) as vendidos
+    FROM ventas v
+    JOIN productos p ON v.producto_id = p.id
+    WHERE p.inventario_id=?
+    GROUP BY p.id
+    ORDER BY vendidos DESC
+    LIMIT 5
     """, (session["inventario_id"],))
     top_productos = cur.fetchall()
 
@@ -549,7 +540,6 @@ def dashboard():
         ventas_total=ventas_total,
         top_productos=top_productos
     )
-
 
 # ================= ADMIN =================
 @app.route("/admin")
