@@ -26,10 +26,10 @@
     const email = document.getElementById('email').value.trim();
     const password = document.getElementById('password').value.trim();
 
-    if (!email || !password) {
-      alert('Por favor complete todos los campos');
-      return;
-    }
+    //if (!email || !password) {
+      //alert('Por favor complete todos los campos');
+      //return;
+    //}
 
     try {
       const response = await axios.post("/register", { email, password });
