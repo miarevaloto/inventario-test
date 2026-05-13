@@ -10,50 +10,39 @@ app.secret_key = os.environ.get("SECRET_KEY", "secret_key_for_render_production"
 
 # ================= DB =================
 def get_db():
-    """Usa inventario.db en el directorio del proyecto"""
     db_path = os.path.join(os.getcwd(), 'inventario.db')
-    print(f"📁 Usando base de datos en: {db_path}", file=sys.stderr)
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn
 
 def init_db():
-    """Inicializa la base solo si no existe"""
     try:
         conn = get_db()
         cur = conn.cursor()
-
-        # Verificar si ya existe la tabla usuarios
         cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='usuarios'")
         if cur.fetchone():
-            print("✅ Base ya existe", file=sys.stderr)
             conn.close()
             return True
 
         # Crear tablas
-        cur.execute("""
-        CREATE TABLE usuarios (
+        cur.execute("""CREATE TABLE usuarios (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             email TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL,
             rol TEXT NOT NULL DEFAULT 'usuario',
             nombre TEXT,
             inventario_id INTEGER
-        )
-        """)
+        )""")
         cur.execute("CREATE TABLE inventarios (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT NOT NULL)")
-        cur.execute("""
-        CREATE TABLE productos (
+        cur.execute("""CREATE TABLE productos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nombre TEXT NOT NULL,
             categoria TEXT NOT NULL,
             cantidad INTEGER NOT NULL,
             precio REAL NOT NULL,
             inventario_id INTEGER NOT NULL
-        )
-        """)
-        cur.execute("""
-        CREATE TABLE ventas (
+        )""")
+        cur.execute("""CREATE TABLE ventas (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             producto_id INTEGER,
             producto TEXT,
@@ -61,10 +50,9 @@ def init_db():
             precio REAL,
             fecha TEXT DEFAULT CURRENT_TIMESTAMP,
             inventario_id INTEGER
-        )
-        """)
+        )""")
 
-        # Crear inventarios y usuarios de prueba
+        # Datos de prueba
         cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", ("Principal",))
         inv_principal_id = cur.lastrowid
         cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", ("Repmotos",))
@@ -79,18 +67,16 @@ def init_db():
 
         conn.commit()
         conn.close()
-        print("✅ Base creada con datos de prueba", file=sys.stderr)
         return True
     except Exception as e:
         print(f"❌ Error en init_db: {str(e)}", file=sys.stderr)
         return False
 
-
 # ================= LOGIN =================
+@app.route("/", methods=["GET","POST"])
 @app.route("/login", methods=["GET","POST"])
 def login():
     if request.method == "POST":
-        # Detectar si la petición es JSON (fetch/axios)
         if request.is_json:
             data = request.get_json()
             email = data.get("email")
@@ -110,17 +96,13 @@ def login():
             session["rol"] = user["rol"]
             session["inventario_id"] = user["inventario_id"]
             session["nombre"] = user["nombre"] or user["email"]
-
             redirect_url = "/admin" if user["rol"]=="admin" else "/index"
-            # Responder según tipo de petición
             return jsonify({"ok": True, "redirect": redirect_url}) if request.is_json else redirect(redirect_url)
 
         msg = "Credenciales incorrectas"
         return jsonify({"ok": False, "msg": msg}) if request.is_json else redirect("/login")
 
     return render_template("login.html")
-
-
 
 # ================= REGISTER =================
 @app.route("/register", methods=["GET","POST"])
@@ -155,7 +137,6 @@ def register():
         return jsonify({"ok": True, "msg": msg}) if request.is_json else redirect("/login")
 
     return render_template("register.html")
-
 
 
 # ================= RUTA DE PRUEBA =================
