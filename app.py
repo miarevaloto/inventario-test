@@ -492,7 +492,6 @@ def venta():
     flash("✅ Venta registrada")
     return redirect("/ventas")
 
-
 # ================= DASHBOARD =================
 @app.route("/dashboard")
 def dashboard():
