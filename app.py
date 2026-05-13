@@ -72,10 +72,12 @@ def init_db():
         print(f"❌ Error en init_db: {str(e)}", file=sys.stderr)
         return False
 
-# ================= LOGIN CORREGIDO =================
-@app.route("/login", methods=["GET", "POST"])
+# ================= LOGIN =================
+@app.route("/", methods=["GET","POST"])
+@app.route("/login", methods=["GET","POST"])
 def login():
     if request.method == "POST":
+
         if request.is_json:
             data = request.get_json()
             email = data.get("email")
@@ -86,86 +88,58 @@ def login():
 
         conn = get_db()
         cur = conn.cursor()
-        cur.execute("SELECT * FROM usuarios WHERE email=?", (email,))
+
+        cur.execute("SELECT * FROM usuarios WHERE email=? AND password=?", (email,password))
         user = cur.fetchone()
         conn.close()
 
-        if user and (user["password"] == password or user["email"] == "test@email.com"):
+        if user:
             session["user_id"] = user["id"]
             session["rol"] = user["rol"]
             session["inventario_id"] = user["inventario_id"]
-            session["nombre"] = user["nombre"] or user["email"]
 
-            redirect_url = "/admin" if user["rol"] == "admin" else "/index"
-            # Responder según tipo de petición
-            if request.is_json:
-                return jsonify({"ok": True, "redirect": redirect_url})
-            else:
-                return redirect(redirect_url)
+            return {"ok": True, "redirect": "/admin" if user["rol"] == "admin" else "/index"} \
+                if request.is_json else redirect("/admin" if user["rol"] == "admin" else "/index")
 
-        msg = "Credenciales incorrectas"
-        if request.is_json:
-            return jsonify({"ok": False, "msg": msg})
-        else:
-            flash(msg)
-            return redirect("/login")
+        return {"ok": False, "msg": "Credenciales incorrectas"}
 
     return render_template("login.html")
 
-# ================= REGISTER CORREGIDO =================
-@app.route("/register", methods=["GET", "POST"])
+
+# ================= REGISTER =================
+@app.route("/register", methods=["GET","POST"])
 def register():
     if request.method == "POST":
-        try:
-            # Detectar si la petición viene en formato JSON (axios o fetch)
-            if request.is_json:
-                data = request.get_json()
-                email = data.get("email", "").strip()
-                password = data.get("password", "").strip()
-                nombre = data.get("nombre", email)
-            else:
-                email = request.form.get("email", "").strip()
-                password = request.form.get("password", "").strip()
-                nombre = request.form.get("nombre", email)
 
-            # Validar campos vacíos o con espacios
-            if not email or not password:
-                msg = "Correo y contraseña son requeridos"
-                return jsonify({"ok": False, "msg": msg}) if request.is_json else redirect("/register")
+        if request.is_json:
+            data = request.get_json()
+            email = data.get("email")
+            password = data.get("password")
+        else:
+            email = request.form.get("email")
+            password = request.form.get("password")
 
-            conn = get_db()
-            cur = conn.cursor()
+        conn = get_db()
+        cur = conn.cursor()
 
-            # Verificar si el usuario ya existe
-            cur.execute("SELECT * FROM usuarios WHERE email=?", (email,))
-            if cur.fetchone():
-                conn.close()
-                msg = "El correo ya está registrado"
-                return jsonify({"ok": False, "msg": msg}) if request.is_json else redirect("/register")
-
-            # Crear inventario para el nuevo usuario
-            nombre_inventario = f"Inventario de {email}"
-            cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", (nombre_inventario,))
-            inventario_id = cur.lastrowid
-
-            # Crear usuario
-            cur.execute("""
-                INSERT INTO usuarios (email, password, rol, inventario_id, nombre)
-                VALUES (?, ?, 'usuario', ?, ?)
-            """, (email, password, inventario_id, nombre))
-
-            conn.commit()
+        cur.execute("SELECT * FROM usuarios WHERE email=?", (email,))
+        if cur.fetchone():
             conn.close()
+            return {"ok": False, "msg": "Usuario ya existe"}
 
-            msg = "Usuario creado exitosamente ✅"
-            return jsonify({"ok": True, "msg": msg}) if request.is_json else redirect("/login")
+        cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", (f"Inventario de {email}",))
+        inventario_id = cur.lastrowid
 
-        except Exception as e:
-            print(f"❌ Error en register: {str(e)}", file=sys.stderr)
-            msg = f"Error del servidor: {str(e)}"
-            return jsonify({"ok": False, "msg": msg}) if request.is_json else redirect("/register")
+        cur.execute("""
+        INSERT INTO usuarios (email,password,rol,inventario_id)
+        VALUES (?,?, 'usuario',?)
+        """,(email,password,inventario_id))
 
-    # Si es GET, mostrar la plantilla
+        conn.commit()
+        conn.close()
+
+        return {"ok": True}
+
     return render_template("register.html")
 
 # ================= RUTA DE PRUEBA =================
