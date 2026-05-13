@@ -73,22 +73,16 @@ def init_db():
         return False
 
 # ================= LOGIN CORREGIDO =================
-@app.route("/", methods=["GET","POST"])
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        # Detectar si es JSON por el Content-Type (más confiable que request.is_json)
-        is_json = request.headers.get('Content-Type', '').startswith('application/json')
-        
-        if is_json:
+        if request.is_json:
             data = request.get_json()
             email = data.get("email")
             password = data.get("password")
-            print(f"📝 JSON Login - Email: {email}", file=sys.stderr)
         else:
             email = request.form.get("email")
             password = request.form.get("password")
-            print(f"📝 Form Login - Email: {email}", file=sys.stderr)
 
         conn = get_db()
         cur = conn.cursor()
@@ -103,14 +97,14 @@ def login():
             session["nombre"] = user["nombre"] or user["email"]
 
             redirect_url = "/admin" if user["rol"] == "admin" else "/index"
-            
-            if is_json:
+            # Responder según tipo de petición
+            if request.is_json:
                 return jsonify({"ok": True, "redirect": redirect_url})
             else:
                 return redirect(redirect_url)
 
         msg = "Credenciales incorrectas"
-        if is_json:
+        if request.is_json:
             return jsonify({"ok": False, "msg": msg})
         else:
             flash(msg)
@@ -118,71 +112,62 @@ def login():
 
     return render_template("login.html")
 
-
 # ================= REGISTER CORREGIDO =================
 @app.route("/register", methods=["GET", "POST"])
 def register():
     if request.method == "POST":
-        # Detectar si es JSON por el Content-Type
-        is_json = request.headers.get('Content-Type', '').startswith('application/json')
-        
-        if is_json:
-            data = request.get_json()
-            email = data.get("email")
-            password = data.get("password")
-            nombre = data.get("nombre", email)
-            print(f"📝 JSON Register - Email: {email}", file=sys.stderr)
-        else:
-            email = request.form.get("email")
-            password = request.form.get("password")
-            nombre = request.form.get("nombre", email)
-            print(f"📝 Form Register - Email: {email}", file=sys.stderr)
-
-        if not email or not password:
-            msg = "Correo y contraseña requeridos"
-            if is_json:
-                return jsonify({"ok": False, "msg": msg})
+        try:
+            # Detectar si la petición viene en formato JSON (axios o fetch)
+            if request.is_json:
+                data = request.get_json()
+                email = data.get("email", "").strip()
+                password = data.get("password", "").strip()
+                nombre = data.get("nombre", email)
             else:
-                flash(msg)
-                return redirect("/register")
+                email = request.form.get("email", "").strip()
+                password = request.form.get("password", "").strip()
+                nombre = request.form.get("nombre", email)
 
-        conn = get_db()
-        cur = conn.cursor()
-        
-        # Verificar si el usuario ya existe
-        cur.execute("SELECT * FROM usuarios WHERE email=?", (email,))
-        if cur.fetchone():
+            # Validar campos vacíos o con espacios
+            if not email or not password:
+                msg = "Correo y contraseña son requeridos"
+                return jsonify({"ok": False, "msg": msg}) if request.is_json else redirect("/register")
+
+            conn = get_db()
+            cur = conn.cursor()
+
+            # Verificar si el usuario ya existe
+            cur.execute("SELECT * FROM usuarios WHERE email=?", (email,))
+            if cur.fetchone():
+                conn.close()
+                msg = "El correo ya está registrado"
+                return jsonify({"ok": False, "msg": msg}) if request.is_json else redirect("/register")
+
+            # Crear inventario para el nuevo usuario
+            nombre_inventario = f"Inventario de {email}"
+            cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", (nombre_inventario,))
+            inventario_id = cur.lastrowid
+
+            # Crear usuario
+            cur.execute("""
+                INSERT INTO usuarios (email, password, rol, inventario_id, nombre)
+                VALUES (?, ?, 'usuario', ?, ?)
+            """, (email, password, inventario_id, nombre))
+
+            conn.commit()
             conn.close()
-            msg = "El correo ya está registrado"
-            if is_json:
-                return jsonify({"ok": False, "msg": msg})
-            else:
-                flash(msg)
-                return redirect("/register")
 
-        # Crear inventario para el nuevo usuario
-        cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", (f"Inventario de {email}",))
-        inventario_id = cur.lastrowid
-        
-        # Crear usuario
-        cur.execute("""
-            INSERT INTO usuarios (nombre, email, password, rol, inventario_id) 
-            VALUES (?, ?, ?, 'usuario', ?)
-        """, (nombre, email, password, inventario_id))
-        
-        conn.commit()
-        conn.close()
+            msg = "Usuario creado exitosamente ✅"
+            return jsonify({"ok": True, "msg": msg}) if request.is_json else redirect("/login")
 
-        msg = "Usuario creado exitosamente"
-        print(f"✅ Usuario registrado: {email}", file=sys.stderr)
-        
-        if is_json:
-            return jsonify({"ok": True, "msg": msg})
-        else:
-            flash(msg)
-            return redirect("/login")
+        except Exception as e:
+            print(f"❌ Error en register: {str(e)}", file=sys.stderr)
+            msg = f"Error del servidor: {str(e)}"
+            return jsonify({"ok": False, "msg": msg}) if request.is_json else redirect("/register")
 
+    # Si es GET, mostrar la plantilla
     return render_template("register.html")
+
 # ================= RUTA DE PRUEBA =================
 @app.route("/health")
 def health():
