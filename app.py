@@ -9,7 +9,7 @@ import traceback
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "secret_key_for_render_production")
 
-# ================= DB (TU CÓDIGO EXISTENTE - NO MODIFICADO) =================
+# ================= DB =================
 def get_db():
     db_path = os.path.join(os.getcwd(), 'inventario.db')
     conn = sqlite3.connect(db_path)
@@ -100,7 +100,7 @@ def init_db():
         return False
 
 
-# ================= NUEVA FUNCIÓN: REPARAR BASE DE DATOS =================
+# ================= REPARAR BASE DE DATOS =================
 def repair_db():
     """Repara la estructura de la base de datos - Agrega columnas faltantes"""
     try:
@@ -146,7 +146,7 @@ def repair_db():
         return False
 
 
-# ================= LOGIN (TU CÓDIGO - NO MODIFICADO) =================
+# ================= LOGIN =================
 @app.route("/", methods=["GET","POST"])
 @app.route("/login", methods=["GET","POST"])
 def login():
@@ -180,7 +180,7 @@ def login():
     return render_template("login.html")
 
 
-# ================= REGISTER (TU CÓDIGO - NO MODIFICADO) =================
+# ================= REGISTER =================
 @app.route("/register", methods=["GET","POST"])
 def register():
     if request.method == "POST":
@@ -266,7 +266,7 @@ def index():
                          total_valor=total_valor, producto_buscado=None)
 
 
-# ================= BUSCAR PRODUCTO (CORREGIDO) =================
+# ================= BUSCAR PRODUCTO =================
 @app.route("/buscar_producto", methods=["POST"])
 def buscar_producto():
     if "user_id" not in session:
@@ -305,7 +305,7 @@ def buscar_producto():
                          producto_buscado=producto, total_valor=total_valor)
 
 
-# ================= AGREGAR PRODUCTO (CORREGIDO) =================
+# ================= AGREGAR PRODUCTO =================
 @app.route("/agregar_producto", methods=["POST"])
 def agregar_producto():
     if "user_id" not in session:
@@ -322,12 +322,6 @@ def agregar_producto():
         flash("❌ Valores inválidos")
         return redirect("/index")
 
-    # CORREGIDO: Manejar categoría correctamente
-    categoria = request.form.get("categoria", "")
-    if not categoria:
-        flash("❌ Categoría inválida")
-        return redirect("/index")
-
     conn = get_db()
     cur = conn.cursor()
 
@@ -336,7 +330,7 @@ def agregar_producto():
         VALUES (?, ?, ?, ?, ?)
     """, (
         request.form["nombre"],
-        categoria,
+        request.form["categoria"],
         precio,
         cantidad,
         session["inventario_id"]
@@ -347,7 +341,6 @@ def agregar_producto():
 
     flash("✅ Producto agregado")
     return redirect("/index")
-
 
 # ================= ELIMINAR PRODUCTO =================
 @app.route("/delete/<int:id>")
@@ -727,31 +720,337 @@ def reporte_pdf():
     if "user_id" not in session:
         return redirect("/login")
 
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer)
-
-    conn = get_db()
-    cur = conn.cursor()
-
-    cur.execute("""
-    SELECT nombre, categoria, cantidad, precio
-    FROM productos
-    WHERE inventario_id=?
-    """, (session["inventario_id"],))
-
-    data = [["Nombre", "Categoría", "Cantidad", "Precio"]]
-
-    for row in cur.fetchall():
-        data.append([row["nombre"], row["categoria"], row["cantidad"], f"${row['precio']:,.2f}"])
-
-    conn.close()
-
-    table = Table(data)
-    doc.build([table])
-
-    buffer.seek(0)
-
-    return send_file(buffer, as_attachment=True, download_name="reporte.pdf", mimetype='application/pdf')
+    try:
+        from reportlab.lib.pagesizes import letter, landscape
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image, PageBreak
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
+        from reportlab.lib import colors
+        from reportlab.lib.units import inch, cm
+        from datetime import datetime
+        import os
+        
+        # Crear buffer y documento en horizontal para mejor visualización
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=landscape(letter), 
+                                leftMargin=0.5*inch, rightMargin=0.5*inch,
+                                topMargin=0.5*inch, bottomMargin=0.5*inch)
+        
+        # Estilos personalizados
+        styles = getSampleStyleSheet()
+        
+        # Estilo para título principal
+        titulo_style = ParagraphStyle(
+            'TituloStyle',
+            parent=styles['Title'],
+            fontSize=20,
+            textColor=colors.HexColor('#1a4d8c'),
+            alignment=TA_CENTER,
+            spaceAfter=20,
+            fontName='Helvetica-Bold'
+        )
+        
+        # Estilo para subtítulo
+        subtitulo_style = ParagraphStyle(
+            'SubtituloStyle',
+            parent=styles['Heading2'],
+            fontSize=14,
+            textColor=colors.HexColor('#4a4a4a'),
+            alignment=TA_CENTER,
+            spaceAfter=10
+        )
+        
+        # Estilo para información de empresa
+        info_style = ParagraphStyle(
+            'InfoStyle',
+            parent=styles['Normal'],
+            fontSize=10,
+            textColor=colors.HexColor('#666666'),
+            alignment=TA_CENTER,
+            spaceAfter=5
+        )
+        
+        # Estilo para encabezados de sección
+        seccion_style = ParagraphStyle(
+            'SeccionStyle',
+            parent=styles['Heading3'],
+            fontSize=14,
+            textColor=colors.HexColor('#1a4d8c'),
+            spaceBefore=15,
+            spaceAfter=10,
+            fontName='Helvetica-Bold'
+        )
+        
+        # Estilo para tarjetas de resumen
+        resumen_style = ParagraphStyle(
+            'ResumenStyle',
+            parent=styles['Normal'],
+            fontSize=11,
+            textColor=colors.HexColor('#333333'),
+            alignment=TA_CENTER
+        )
+        
+        # Lista para almacenar elementos del PDF
+        story = []
+        
+        # ================= ENCABEZADO =================
+        # Título principal
+        story.append(Paragraph("📦 REPORTE DE INVENTARIO", titulo_style))
+        story.append(Spacer(1, 5))
+        
+        # Información de la empresa
+        story.append(Paragraph("Sistema de Gestión de Inventarios", subtitulo_style))
+        story.append(Spacer(1, 5))
+        
+        # Fecha y usuario
+        fecha_actual = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        nombre_usuario = session.get('nombre', session.get('email', 'Usuario'))
+        
+        story.append(Paragraph(f"Generado por: {nombre_usuario}", info_style))
+        story.append(Paragraph(f"Fecha de emisión: {fecha_actual}", info_style))
+        story.append(Spacer(1, 20))
+        
+        # ================= LÍNEA SEPARADORA =================
+        story.append(Paragraph("<hr color='#1a4d8c'/>", styles['Normal']))
+        story.append(Spacer(1, 15))
+        
+        # ================= CONEXIÓN A BD =================
+        conn = get_db()
+        cur = conn.cursor()
+        
+        # ================= TARJETAS DE RESUMEN =================
+        story.append(Paragraph("📊 RESUMEN GENERAL", seccion_style))
+        
+        # Obtener estadísticas
+        cur.execute("SELECT COUNT(*) as total FROM productos WHERE inventario_id=?", (session["inventario_id"],))
+        total_productos = cur.fetchone()["total"] or 0
+        
+        cur.execute("SELECT SUM(cantidad) as total FROM productos WHERE inventario_id=?", (session["inventario_id"],))
+        stock_total = cur.fetchone()["total"] or 0
+        
+        cur.execute("SELECT SUM(cantidad * precio) as total FROM productos WHERE inventario_id=?", (session["inventario_id"],))
+        valor_total = cur.fetchone()["total"] or 0
+        
+        cur.execute("SELECT COUNT(DISTINCT categoria) as total FROM productos WHERE inventario_id=?", (session["inventario_id"],))
+        total_categorias = cur.fetchone()["total"] or 0
+        
+        # Crear tabla de resumen estilo tarjetas
+        resumen_data = [
+            ["📦 Total Productos", "📊 Stock Total", "💰 Valor Inventario", "📂 Categorías"],
+            [f"{total_productos:,}", f"{stock_total:,} und.", f"${valor_total:,.2f}", f"{total_categorias}"]
+        ]
+        
+        resumen_table = Table(resumen_data, colWidths=[2.5*inch, 2.5*inch, 2.5*inch, 2.5*inch])
+        resumen_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a4d8c')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('TOPPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, 1), colors.HexColor('#e8f0fe')),
+            ('TEXTCOLOR', (0, 1), (-1, 1), colors.HexColor('#1a4d8c')),
+            ('FONTSIZE', (0, 1), (-1, 1), 16),
+            ('FONTNAME', (0, 1), (-1, 1), 'Helvetica-Bold'),
+            ('TOPPADDING', (0, 1), (-1, 1), 15),
+            ('BOTTOMPADDING', (0, 1), (-1, 1), 15),
+            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#c0c0c0')),
+            ('BOX', (0, 0), (-1, -1), 2, colors.HexColor('#1a4d8c')),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+        
+        story.append(resumen_table)
+        story.append(Spacer(1, 20))
+        
+        # ================= INFORMACIÓN DEL INVENTARIO =================
+        story.append(Paragraph("📋 LISTADO DE PRODUCTOS", seccion_style))
+        
+        # Obtener productos del inventario del usuario
+        cur.execute("""
+            SELECT id, nombre, categoria, cantidad, precio, (cantidad * precio) as valor_total
+            FROM productos 
+            WHERE inventario_id=?
+            ORDER BY categoria, nombre
+        """, (session["inventario_id"],))
+        
+        products = cur.fetchall()
+        
+        if products:
+            # Preparar datos para la tabla
+            data = [["ID", "Producto", "Categoría", "Cantidad", "Precio Unit.", "Valor Total"]]
+            
+            total_general = 0
+            for row in products:
+                valor = row["cantidad"] * row["precio"]
+                total_general += valor
+                
+                # Colores según stock bajo
+                cantidad_text = str(row["cantidad"])
+                if row["cantidad"] < 5:
+                    cantidad_text = f"⚠️ {row['cantidad']}"
+                
+                data.append([
+                    row["id"],
+                    row["nombre"],
+                    row["categoria"],
+                    cantidad_text,
+                    f"${row['precio']:,.2f}",
+                    f"${valor:,.2f}"
+                ])
+            
+            # Agregar fila de total
+            data.append(["", "", "", "", "TOTAL GENERAL:", f"${total_general:,.2f}"])
+            
+            # Crear tabla con estilos mejorados
+            table = Table(data, colWidths=[0.6*inch, 2*inch, 1.2*inch, 0.8*inch, 1.2*inch, 1.2*inch])
+            table.setStyle(TableStyle([
+                # Encabezado
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a4d8c')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+                ('TOPPADDING', (0, 0), (-1, 0), 10),
+                
+                # Filas de datos
+                ('FONTNAME', (0, 1), (-1, -2), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -2), 9),
+                ('ALIGN', (0, 1), (0, -2), 'CENTER'),
+                ('ALIGN', (3, 1), (3, -2), 'CENTER'),
+                ('ALIGN', (4, 1), (-1, -2), 'RIGHT'),
+                ('VALIGN', (0, 1), (-1, -2), 'MIDDLE'),
+                
+                # Colores alternados para filas
+                ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.HexColor('#f5f5f5')]),
+                
+                # Advertencia para stock bajo
+                ('TEXTCOLOR', (3, 1), (3, -2), colors.HexColor('#dc3545'), lambda x, y: y >= 1 and data[y][3].startswith('⚠️')),
+                
+                # Total
+                ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e8f0fe')),
+                ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, -1), (-1, -1), 10),
+                ('ALIGN', (4, -1), (-1, -1), 'RIGHT'),
+                ('TEXTCOLOR', (4, -1), (-1, -1), colors.HexColor('#1a4d8c')),
+                
+                # Bordes
+                ('GRID', (0, 0), (-1, -2), 0.5, colors.HexColor('#cccccc')),
+                ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#1a4d8c')),
+            ]))
+            
+            story.append(table)
+            
+            # ================= RESULTADOS ADICIONALES =================
+            story.append(Spacer(1, 20))
+            story.append(Paragraph("📊 ANÁLISIS DE STOCK", seccion_style))
+            
+            # Productos con stock bajo
+            cur.execute("""
+                SELECT nombre, cantidad 
+                FROM productos 
+                WHERE inventario_id=? AND cantidad < 5
+                ORDER BY cantidad ASC
+                LIMIT 10
+            """, (session["inventario_id"],))
+            
+            productos_bajos = cur.fetchall()
+            
+            if productos_bajos:
+                bajo_data = [["Producto", "Stock Actual"]]
+                for p in productos_bajos:
+                    bajo_data.append([p["nombre"], str(p["cantidad"])])
+                
+                bajo_table = Table(bajo_data, colWidths=[3.5*inch, 1.5*inch])
+                bajo_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#dc3545')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 10),
+                    ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cccccc')),
+                    ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#fff5f5')]),
+                ]))
+                
+                story.append(Paragraph("⚠️ Productos con stock bajo (< 5 unidades):", styles['Normal']))
+                story.append(Spacer(1, 5))
+                story.append(bajo_table)
+            else:
+                story.append(Paragraph("✅ No hay productos con stock bajo", styles['Normal']))
+            
+            # ================= TOP PRODUCTOS =================
+            story.append(Spacer(1, 20))
+            story.append(Paragraph("🏆 TOP PRODUCTOS MÁS VENDIDOS", seccion_style))
+            
+            cur.execute("""
+                SELECT producto, SUM(cantidad) as total_vendido
+                FROM ventas
+                WHERE inventario_id=? AND producto IS NOT NULL AND producto != ''
+                GROUP BY producto
+                ORDER BY total_vendido DESC
+                LIMIT 10
+            """, (session["inventario_id"],))
+            
+            top_ventas = cur.fetchall()
+            
+            if top_ventas:
+                top_data = [["Producto", "Unidades Vendidas"]]
+                for tv in top_ventas:
+                    top_data.append([tv["producto"], str(tv["total_vendido"])])
+                
+                top_table = Table(top_data, colWidths=[3.5*inch, 1.5*inch])
+                top_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#28a745')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 10),
+                    ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cccccc')),
+                    ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f0fff4')]),
+                ]))
+                
+                story.append(top_table)
+            else:
+                story.append(Paragraph("📭 No hay ventas registradas aún", styles['Normal']))
+        
+        else:
+            story.append(Paragraph("📭 No hay productos registrados en este inventario", styles['Normal']))
+        
+        conn.close()
+        
+        # ================= PIE DE PÁGINA =================
+        story.append(Spacer(1, 30))
+        story.append(Paragraph("<hr color='#1a4d8c'/>", styles['Normal']))
+        story.append(Spacer(1, 5))
+        
+        pie_style = ParagraphStyle(
+            'PieStyle',
+            parent=styles['Normal'],
+            fontSize=8,
+            textColor=colors.HexColor('#999999'),
+            alignment=TA_CENTER
+        )
+        
+        story.append(Paragraph("Este reporte es generado automáticamente por el Sistema de Gestión de Inventarios", pie_style))
+        story.append(Paragraph(f"Documento generado el {datetime.now().strftime('%d/%m/%Y a las %H:%M:%S')}", pie_style))
+        
+        # ================= CONSTRUIR PDF =================
+        doc.build(story)
+        buffer.seek(0)
+        
+        # Generar nombre con timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"reporte_inventario_{timestamp}.pdf"
+        
+        return send_file(buffer, as_attachment=True, 
+                        download_name=filename, 
+                        mimetype='application/pdf')
+    
+    except Exception as e:
+        print(f"❌ Error al generar PDF: {str(e)}", file=sys.stderr)
+        flash(f"❌ Error al generar el reporte: {str(e)}")
+        return redirect("/index")
 
 
 # ================= LOGOUT =================
