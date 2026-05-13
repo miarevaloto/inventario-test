@@ -312,36 +312,58 @@ def agregar_producto():
         return redirect("/login")
 
     try:
+        nombre = request.form.get("nombre", "").strip()
+        if not nombre:
+            flash("❌ El nombre del producto es requerido")
+            return redirect("/index")
+        
         precio = float(request.form["precio"])
         cantidad = int(request.form["cantidad"])
-    except:
+    except ValueError:
+        flash("❌ Datos inválidos (precio o cantidad no son números válidos)")
+        return redirect("/index")
+    except Exception as e:
+        print(f"❌ Error: {e}", file=sys.stderr)
         flash("❌ Datos inválidos")
         return redirect("/index")
 
     if precio <= 0 or cantidad <= 0:
-        flash("❌ Valores inválidos")
+        flash("❌ Valores inválidos (precio y cantidad deben ser mayores a 0)")
         return redirect("/index")
 
-    conn = get_db()
-    cur = conn.cursor()
+    # Obtener la categoría correctamente (como viene del formulario)
+    categoria_select = request.form.get("categoria_select", "")
+    nueva_categoria = request.form.get("nueva_categoria", "")
+    
+    if categoria_select == "nueva":
+        categoria = nueva_categoria.strip()
+        if not categoria:
+            flash("❌ Debe ingresar un nombre para la nueva categoría")
+            return redirect("/index")
+    else:
+        categoria = categoria_select
+        if not categoria:
+            flash("❌ Debe seleccionar una categoría")
+            return redirect("/index")
 
-    cur.execute("""
-        INSERT INTO productos (nombre, categoria, precio, cantidad, inventario_id)
-        VALUES (?, ?, ?, ?, ?)
-    """, (
-        request.form["nombre"],
-        request.form["categoria"],
-        precio,
-        cantidad,
-        session["inventario_id"]
-    ))
+    try:
+        conn = get_db()
+        cur = conn.cursor()
 
-    conn.commit()
-    conn.close()
+        cur.execute("""
+            INSERT INTO productos (nombre, categoria, precio, cantidad, inventario_id)
+            VALUES (?, ?, ?, ?, ?)
+        """, (nombre, categoria, precio, cantidad, session["inventario_id"]))
 
-    flash("✅ Producto agregado")
+        conn.commit()
+        conn.close()
+        flash("✅ Producto agregado exitosamente")
+    except Exception as e:
+        print(f"❌ Error al insertar producto: {str(e)}", file=sys.stderr)
+        flash("❌ Error al agregar producto")
+    
     return redirect("/index")
-
+    
 # ================= ELIMINAR PRODUCTO =================
 @app.route("/delete/<int:id>")
 def delete(id):
@@ -374,22 +396,25 @@ def sumar(id):
         flash("❌ Cantidad inválida")
         return redirect("/index")
 
-    conn = get_db()
-    cur = conn.cursor()
+    try:
+        conn = get_db()
+        cur = conn.cursor()
 
-    cur.execute("""
-    UPDATE productos
-    SET cantidad = cantidad + ?
-    WHERE id=? AND inventario_id=?
-    """, (cantidad, id, session["inventario_id"]))
+        cur.execute("""
+            UPDATE productos
+            SET cantidad = cantidad + ?
+            WHERE id=? AND inventario_id=?
+        """, (cantidad, id, session["inventario_id"]))
 
-    conn.commit()
-    conn.close()
-
-    flash("✅ Stock actualizado")
+        conn.commit()
+        conn.close()
+        flash(f"✅ Se agregaron {cantidad} unidades al stock")
+    except Exception as e:
+        print(f"❌ Error al sumar stock: {str(e)}", file=sys.stderr)
+        flash("❌ Error al actualizar stock")
+    
     return redirect("/index")
-
-
+    
 # ================= VENDER DESDE INDEX =================
 @app.route("/vender/<int:id>", methods=["POST"])
 def vender(id):
@@ -406,29 +431,39 @@ def vender(id):
         flash("❌ Cantidad inválida")
         return redirect("/index")
 
-    conn = get_db()
-    cur = conn.cursor()
+    try:
+        conn = get_db()
+        cur = conn.cursor()
 
-    cur.execute("SELECT * FROM productos WHERE id=? AND inventario_id=?", (id, session["inventario_id"]))
-    producto = cur.fetchone()
+        cur.execute("SELECT * FROM productos WHERE id=? AND inventario_id=?", (id, session["inventario_id"]))
+        producto = cur.fetchone()
 
-    if not producto or cantidad > producto["cantidad"]:
+        if not producto:
+            conn.close()
+            flash("❌ Producto no encontrado")
+            return redirect("/index")
+
+        if producto["cantidad"] < cantidad:
+            conn.close()
+            flash(f"❌ Stock insuficiente. Solo hay {producto['cantidad']} unidades")
+            return redirect("/index")
+
+        # Actualizar stock
+        cur.execute("UPDATE productos SET cantidad = cantidad - ? WHERE id=?", (cantidad, id))
+        
+        # Registrar venta (con todas las columnas necesarias)
+        cur.execute("""
+            INSERT INTO ventas (producto_id, producto, cantidad, precio, fecha, inventario_id) 
+            VALUES (?, ?, ?, ?, datetime('now'), ?)
+        """, (id, producto["nombre"], cantidad, producto["precio"], session["inventario_id"]))
+
+        conn.commit()
         conn.close()
-        flash("❌ Error en venta")
-        return redirect("/index")
-
-    cur.execute("UPDATE productos SET cantidad = cantidad - ? WHERE id=?", (cantidad, id))
+        flash(f"✅ Venta realizada: {cantidad} x {producto['nombre']}")
+    except Exception as e:
+        print(f"❌ Error en venta: {str(e)}", file=sys.stderr)
+        flash("❌ Error al procesar la venta")
     
-    # Asegurar que se guarda el nombre del producto
-    cur.execute("""
-        INSERT INTO ventas (producto_id, producto, cantidad, precio, fecha, inventario_id) 
-        VALUES (?, ?, ?, ?, datetime('now'), ?)
-    """, (id, producto["nombre"], cantidad, producto["precio"], session["inventario_id"]))
-
-    conn.commit()
-    conn.close()
-
-    flash("✅ Venta realizada")
     return redirect("/index")
     
 # ================= VENTAS =================
@@ -496,94 +531,48 @@ def venta():
 
 
 # ================= DASHBOARD =================
-# ================= DASHBOARD CORREGIDO =================
 @app.route("/dashboard")
 def dashboard():
     if "user_id" not in session:
         return redirect("/login")
 
-    try:
-        conn = get_db()
-        cur = conn.cursor()
+    conn = get_db()
+    cur = conn.cursor()
 
-        # Total de productos
-        cur.execute("SELECT COUNT(*) as total FROM productos WHERE inventario_id=?", (session["inventario_id"],))
-        total_productos = cur.fetchone()["total"]
+    cur.execute("SELECT COUNT(*) as total FROM productos WHERE inventario_id=?", (session["inventario_id"],))
+    total_productos = cur.fetchone()["total"]
 
-        # Stock total
-        cur.execute("SELECT SUM(cantidad) as stock FROM productos WHERE inventario_id=?", (session["inventario_id"],))
-        stock_result = cur.fetchone()
-        stock_total = stock_result["stock"] if stock_result and stock_result["stock"] else 0
+    cur.execute("SELECT SUM(cantidad) as stock FROM productos WHERE inventario_id=?", (session["inventario_id"],))
+    stock_total = cur.fetchone()["stock"] or 0
 
-        # Ventas totales
-        cur.execute("""
-            SELECT SUM(cantidad * precio) as ventas
-            FROM ventas
-            WHERE inventario_id=?
-        """, (session["inventario_id"],))
-        ventas_result = cur.fetchone()
-        ventas_total = ventas_result["ventas"] if ventas_result and ventas_result["ventas"] else 0
+    cur.execute("""
+    SELECT SUM(v.cantidad * p.precio) as ventas
+    FROM ventas v
+    JOIN productos p ON v.producto_id = p.id
+    WHERE p.inventario_id=?
+    """, (session["inventario_id"],))
+    ventas_total = cur.fetchone()["ventas"] or 0
 
-        # TOP 5 PRODUCTOS MÁS VENDIDOS - Versión mejorada
-        # Primero intentamos con la columna 'producto'
-        try:
-            cur.execute("""
-                SELECT producto, SUM(cantidad) as vendidos
-                FROM ventas
-                WHERE inventario_id=? AND producto IS NOT NULL AND producto != ''
-                GROUP BY producto
-                ORDER BY vendidos DESC
-                LIMIT 5
-            """, (session["inventario_id"],))
-            top_productos = cur.fetchall()
-            
-            # Si no hay resultados con 'producto', intentamos con JOIN a productos
-            if not top_productos:
-                cur.execute("""
-                    SELECT p.nombre as producto, SUM(v.cantidad) as vendidos
-                    FROM ventas v
-                    JOIN productos p ON v.producto_id = p.id
-                    WHERE v.inventario_id=?
-                    GROUP BY p.id
-                    ORDER BY vendidos DESC
-                    LIMIT 5
-                """, (session["inventario_id"],))
-                top_productos = cur.fetchall()
-        except Exception as e:
-            print(f"Error en top productos: {e}", file=sys.stderr)
-            # Si falla, intentamos con JOIN
-            cur.execute("""
-                SELECT p.nombre as producto, SUM(v.cantidad) as vendidos
-                FROM ventas v
-                JOIN productos p ON v.producto_id = p.id
-                WHERE v.inventario_id=?
-                GROUP BY p.id
-                ORDER BY vendidos DESC
-                LIMIT 5
-            """, (session["inventario_id"],))
-            top_productos = cur.fetchall()
+    cur.execute("""
+    SELECT p.nombre, SUM(v.cantidad) as vendidos
+    FROM ventas v
+    JOIN productos p ON v.producto_id = p.id
+    WHERE p.inventario_id=?
+    GROUP BY p.id
+    ORDER BY vendidos DESC
+    LIMIT 5
+    """, (session["inventario_id"],))
+    top_productos = cur.fetchall()
 
-        conn.close()
-        
-        # Convertir a lista de diccionarios para el template
-        top_productos_list = []
-        for p in top_productos:
-            top_productos_list.append({
-                'nombre': p['producto'] if 'producto' in p.keys() else p.get('nombre', 'Unknown'),
-                'vendidos': p['vendidos']
-            })
+    conn.close()
 
-        return render_template("dashboard.html",
-            total_productos=total_productos,
-            stock_total=stock_total,
-            ventas_total=ventas_total,
-            top_productos=top_productos_list
-        )
-    except Exception as e:
-        print(f"❌ Error en dashboard: {str(e)}", file=sys.stderr)
-        flash(f"Error al cargar dashboard: {str(e)}")
-        return redirect("/index")
-        
+    return render_template("dashboard.html",
+        total_productos=total_productos,
+        stock_total=stock_total,
+        ventas_total=ventas_total,
+        top_productos=top_productos
+    ) 
+    
 # ================= ADMIN =================
 @app.route("/admin")
 def admin():
