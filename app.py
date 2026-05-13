@@ -87,12 +87,17 @@ def init_db():
 
 
 # ================= LOGIN =================
-@app.route("/", methods=["GET","POST"])
 @app.route("/login", methods=["GET","POST"])
 def login():
     if request.method == "POST":
-        email = request.form.get("email")
-        password = request.form.get("password")
+        # Detectar si la petición es JSON (fetch/axios)
+        if request.is_json:
+            data = request.get_json()
+            email = data.get("email")
+            password = data.get("password")
+        else:
+            email = request.form.get("email")
+            password = request.form.get("password")
 
         conn = get_db()
         cur = conn.cursor()
@@ -105,29 +110,39 @@ def login():
             session["rol"] = user["rol"]
             session["inventario_id"] = user["inventario_id"]
             session["nombre"] = user["nombre"] or user["email"]
-            return redirect("/admin" if user["rol"]=="admin" else "/index")
 
-        flash("❌ Credenciales incorrectas")
-        return redirect("/login")
+            redirect_url = "/admin" if user["rol"]=="admin" else "/index"
+            # Responder según tipo de petición
+            return jsonify({"ok": True, "redirect": redirect_url}) if request.is_json else redirect(redirect_url)
+
+        msg = "Credenciales incorrectas"
+        return jsonify({"ok": False, "msg": msg}) if request.is_json else redirect("/login")
 
     return render_template("login.html")
+
 
 
 # ================= REGISTER =================
 @app.route("/register", methods=["GET","POST"])
 def register():
     if request.method == "POST":
-        email = request.form.get("email")
-        password = request.form.get("password")
-        nombre = request.form.get("nombre", email)
+        if request.is_json:
+            data = request.get_json()
+            email = data.get("email")
+            password = data.get("password")
+            nombre = data.get("nombre", email)
+        else:
+            email = request.form.get("email")
+            password = request.form.get("password")
+            nombre = request.form.get("nombre", email)
 
         conn = get_db()
         cur = conn.cursor()
         cur.execute("SELECT * FROM usuarios WHERE email=?", (email,))
         if cur.fetchone():
             conn.close()
-            flash("❌ Usuario ya existe")
-            return redirect("/register")
+            msg = "Usuario ya existe"
+            return jsonify({"ok": False, "msg": msg}) if request.is_json else redirect("/register")
 
         cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", (f"Inventario de {email}",))
         inventario_id = cur.lastrowid
@@ -135,10 +150,12 @@ def register():
                     (nombre,email,password,"usuario",inventario_id))
         conn.commit()
         conn.close()
-        flash("✅ Usuario registrado")
-        return redirect("/login")
+
+        msg = "Usuario creado exitosamente"
+        return jsonify({"ok": True, "msg": msg}) if request.is_json else redirect("/login")
 
     return render_template("register.html")
+
 
 
 # ================= RUTA DE PRUEBA =================
