@@ -74,9 +74,10 @@ def init_db():
 
 # ================= LOGIN =================
 @app.route("/", methods=["GET","POST"])
-@app.route("/login", methods=["GET","POST"])
+@app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
+        # Detectar si la petición es JSON (fetch/axios)
         if request.is_json:
             data = request.get_json()
             email = data.get("email")
@@ -91,21 +92,30 @@ def login():
         user = cur.fetchone()
         conn.close()
 
-        if user and (user["password"] == password or user["email"]=="test@email.com"):
+        if user and (user["password"] == password or user["email"] == "test@email.com"):
             session["user_id"] = user["id"]
             session["rol"] = user["rol"]
             session["inventario_id"] = user["inventario_id"]
             session["nombre"] = user["nombre"] or user["email"]
-            redirect_url = "/admin" if user["rol"]=="admin" else "/index"
-            return jsonify({"ok": True, "redirect": redirect_url}) if request.is_json else redirect(redirect_url)
+
+            redirect_url = "/admin" if user["rol"] == "admin" else "/index"
+            # Responder según tipo de petición
+            if request.is_json:
+                return jsonify({"ok": True, "redirect": redirect_url})
+            else:
+                return redirect(redirect_url)
 
         msg = "Credenciales incorrectas"
-        return jsonify({"ok": False, "msg": msg}) if request.is_json else redirect("/login")
+        if request.is_json:
+            return jsonify({"ok": False, "msg": msg})
+        else:
+            flash(msg)
+            return redirect("/login")
 
     return render_template("login.html")
 
 # ================= REGISTER =================
-@app.route("/register", methods=["GET","POST"])
+@app.route("/register", methods=["GET", "POST"])
 def register():
     if request.method == "POST":
         if request.is_json:
@@ -129,7 +139,7 @@ def register():
         cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", (f"Inventario de {email}",))
         inventario_id = cur.lastrowid
         cur.execute("INSERT INTO usuarios (nombre,email,password,rol,inventario_id) VALUES (?,?,?,?,?)",
-                    (nombre,email,password,"usuario",inventario_id))
+                    (nombre, email, password, "usuario", inventario_id))
         conn.commit()
         conn.close()
 
@@ -137,7 +147,6 @@ def register():
         return jsonify({"ok": True, "msg": msg}) if request.is_json else redirect("/login")
 
     return render_template("register.html")
-
 
 # ================= RUTA DE PRUEBA =================
 @app.route("/health")
