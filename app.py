@@ -424,46 +424,31 @@ def vender(id):
     try:
         cantidad = int(request.form["cantidad"])
     except:
-        flash("❌ Cantidad inválida")
+        flash("❌ Datos inválidos")
         return redirect("/index")
 
     if cantidad <= 0:
         flash("❌ Cantidad inválida")
         return redirect("/index")
 
-    try:
-        conn = get_db()
-        cur = conn.cursor()
+    conn = get_db()
+    cur = conn.cursor()
 
-        cur.execute("SELECT * FROM productos WHERE id=? AND inventario_id=?", (id, session["inventario_id"]))
-        producto = cur.fetchone()
+    cur.execute("SELECT * FROM productos WHERE id=? AND inventario_id=?", (id, session["inventario_id"]))
+    producto = cur.fetchone()
 
-        if not producto:
-            conn.close()
-            flash("❌ Producto no encontrado")
-            return redirect("/index")
-
-        if producto["cantidad"] < cantidad:
-            conn.close()
-            flash(f"❌ Stock insuficiente. Solo hay {producto['cantidad']} unidades")
-            return redirect("/index")
-
-        # Actualizar stock
-        cur.execute("UPDATE productos SET cantidad = cantidad - ? WHERE id=?", (cantidad, id))
-        
-        # Registrar venta (con todas las columnas necesarias)
-        cur.execute("""
-            INSERT INTO ventas (producto_id, producto, cantidad, precio, fecha, inventario_id) 
-            VALUES (?, ?, ?, ?, datetime('now'), ?)
-        """, (id, producto["nombre"], cantidad, producto["precio"], session["inventario_id"]))
-
-        conn.commit()
+    if not producto or cantidad > producto["cantidad"]:
         conn.close()
-        flash(f"✅ Venta realizada: {cantidad} x {producto['nombre']}")
-    except Exception as e:
-        print(f"❌ Error en venta: {str(e)}", file=sys.stderr)
-        flash("❌ Error al procesar la venta")
-    
+        flash("❌ Error en venta")
+        return redirect("/index")
+
+    cur.execute("UPDATE productos SET cantidad = cantidad - ? WHERE id=?", (cantidad,id))
+    cur.execute("INSERT INTO ventas (producto_id,cantidad) VALUES (?,?)", (id,cantidad))
+
+    conn.commit()
+    conn.close()
+
+    flash("✅ Venta realizada")
     return redirect("/index")
     
 # ================= VENTAS =================
