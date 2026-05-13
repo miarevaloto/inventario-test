@@ -372,29 +372,35 @@ def vender(id):
     return redirect("/index")
 
 
+# ================= VENTAS CORREGIDO =================
 @app.route("/ventas")
 def ventas():
     if "user_id" not in session:
         return redirect("/login")
 
-    conn = get_db()
-    cur = conn.cursor()
+    try:
+        conn = get_db()
+        cur = conn.cursor()
 
-    cur.execute("SELECT id, nombre, cantidad, precio FROM productos WHERE inventario_id=?", (session["inventario_id"],))
-    productos = cur.fetchall()
+        cur.execute("SELECT id, nombre, cantidad, precio FROM productos WHERE inventario_id=?", (session["inventario_id"],))
+        productos = cur.fetchall()
 
-    cur.execute("""
-        SELECT v.id, v.producto, v.cantidad, v.precio, v.fecha
-        FROM ventas v
-        WHERE v.inventario_id=?
-        ORDER BY v.id DESC
-        LIMIT 50
-    """, (session["inventario_id"],))
-    ventas = cur.fetchall()
+        cur.execute("""
+            SELECT v.id, v.producto, v.cantidad, v.precio, v.fecha
+            FROM ventas v
+            WHERE v.inventario_id=?
+            ORDER BY v.id DESC
+            LIMIT 50
+        """, (session["inventario_id"],))
+        ventas_list = cur.fetchall()
 
-    conn.close()
+        conn.close()
 
-    return render_template("ventas.html", productos=productos, ventas=ventas)
+        return render_template("ventas.html", productos=productos, ventas=ventas_list)
+    except Exception as e:
+        print(f"❌ Error en ventas: {str(e)}", file=sys.stderr)
+        flash(f"Error: {str(e)}")
+        return redirect("/index")
 
 
 @app.route("/venta", methods=["POST"])
@@ -442,40 +448,48 @@ def dashboard():
     if "user_id" not in session:
         return redirect("/login")
 
-    conn = get_db()
-    cur = conn.cursor()
+    try:
+        conn = get_db()
+        cur = conn.cursor()
 
-    cur.execute("SELECT COUNT(*) as total FROM productos WHERE inventario_id=?", (session["inventario_id"],))
-    total_productos = cur.fetchone()["total"]
+        cur.execute("SELECT COUNT(*) as total FROM productos WHERE inventario_id=?", (session["inventario_id"],))
+        total_productos = cur.fetchone()
+        total_productos = total_productos["total"] if total_productos else 0
 
-    cur.execute("SELECT SUM(cantidad) as stock FROM productos WHERE inventario_id=?", (session["inventario_id"],))
-    stock_total = cur.fetchone()["stock"] or 0
+        cur.execute("SELECT SUM(cantidad) as stock FROM productos WHERE inventario_id=?", (session["inventario_id"],))
+        stock_total = cur.fetchone()
+        stock_total = stock_total["stock"] if stock_total and stock_total["stock"] else 0
 
-    cur.execute("""
-    SELECT SUM(cantidad * precio) as ventas
-    FROM ventas
-    WHERE inventario_id=?
-    """, (session["inventario_id"],))
-    ventas_total = cur.fetchone()["ventas"] or 0
+        cur.execute("""
+            SELECT SUM(cantidad * precio) as ventas
+            FROM ventas
+            WHERE inventario_id=?
+        """, (session["inventario_id"],))
+        ventas_total = cur.fetchone()
+        ventas_total = ventas_total["ventas"] if ventas_total and ventas_total["ventas"] else 0
 
-    cur.execute("""
-    SELECT producto, SUM(cantidad) as vendidos
-    FROM ventas
-    WHERE inventario_id=?
-    GROUP BY producto
-    ORDER BY vendidos DESC
-    LIMIT 5
-    """, (session["inventario_id"],))
-    top_productos = cur.fetchall()
+        cur.execute("""
+            SELECT producto, SUM(cantidad) as vendidos
+            FROM ventas
+            WHERE inventario_id=?
+            GROUP BY producto
+            ORDER BY vendidos DESC
+            LIMIT 5
+        """, (session["inventario_id"],))
+        top_productos = cur.fetchall()
 
-    conn.close()
+        conn.close()
 
-    return render_template("dashboard.html",
-        total_productos=total_productos,
-        stock_total=stock_total,
-        ventas_total=ventas_total,
-        top_productos=top_productos
-    )
+        return render_template("dashboard.html",
+            total_productos=total_productos,
+            stock_total=stock_total,
+            ventas_total=ventas_total,
+            top_productos=top_productos
+        )
+    except Exception as e:
+        print(f"❌ Error en dashboard: {str(e)}", file=sys.stderr)
+        flash(f"Error: {str(e)}")
+        return redirect("/index")
 
 
 @app.route("/admin")
