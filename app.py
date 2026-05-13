@@ -312,56 +312,34 @@ def agregar_producto():
         return redirect("/login")
 
     try:
-        nombre = request.form.get("nombre", "").strip()
-        if not nombre:
-            flash("❌ El nombre del producto es requerido")
-            return redirect("/index")
-        
         precio = float(request.form["precio"])
         cantidad = int(request.form["cantidad"])
-    except ValueError:
-        flash("❌ Datos inválidos (precio o cantidad no son números válidos)")
-        return redirect("/index")
-    except Exception as e:
-        print(f"❌ Error: {e}", file=sys.stderr)
+    except:
         flash("❌ Datos inválidos")
         return redirect("/index")
 
     if precio <= 0 or cantidad <= 0:
-        flash("❌ Valores inválidos (precio y cantidad deben ser mayores a 0)")
+        flash("❌ Valores inválidos")
         return redirect("/index")
 
-    # Obtener la categoría correctamente (como viene del formulario)
-    categoria_select = request.form.get("categoria_select", "")
-    nueva_categoria = request.form.get("nueva_categoria", "")
-    
-    if categoria_select == "nueva":
-        categoria = nueva_categoria.strip()
-        if not categoria:
-            flash("❌ Debe ingresar un nombre para la nueva categoría")
-            return redirect("/index")
-    else:
-        categoria = categoria_select
-        if not categoria:
-            flash("❌ Debe seleccionar una categoría")
-            return redirect("/index")
+    conn = get_db()
+    cur = conn.cursor()
 
-    try:
-        conn = get_db()
-        cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO productos (nombre, categoria, precio, cantidad, inventario_id)
+        VALUES (?, ?, ?, ?, ?)
+    """, (
+        request.form["nombre"],
+        request.form["categoria"],
+        precio,
+        cantidad,
+        session["inventario_id"]
+    ))
 
-        cur.execute("""
-            INSERT INTO productos (nombre, categoria, precio, cantidad, inventario_id)
-            VALUES (?, ?, ?, ?, ?)
-        """, (nombre, categoria, precio, cantidad, session["inventario_id"]))
+    conn.commit()
+    conn.close()
 
-        conn.commit()
-        conn.close()
-        flash("✅ Producto agregado exitosamente")
-    except Exception as e:
-        print(f"❌ Error al insertar producto: {str(e)}", file=sys.stderr)
-        flash("❌ Error al agregar producto")
-    
+    flash("✅ Producto agregado")
     return redirect("/index")
     
 # ================= ELIMINAR PRODUCTO =================
