@@ -26,12 +26,12 @@ def init_db():
             repair_db()
             return True
 
+        # Crear tablas
         cur.execute("""CREATE TABLE usuarios (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             email TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL,
             rol TEXT NOT NULL DEFAULT 'usuario',
-            nombre TEXT,
             inventario_id INTEGER
         )""")
         cur.execute("CREATE TABLE inventarios (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT NOT NULL)")
@@ -53,18 +53,20 @@ def init_db():
             inventario_id INTEGER
         )""")
 
+        # Datos de prueba
         cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", ("Principal",))
         inv_principal_id = cur.lastrowid
         cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", ("Repmotos",))
         inv_repmotos_id = cur.lastrowid
 
-        cur.execute("INSERT INTO usuarios (email,password,rol,nombre,inventario_id) VALUES (?,?,?,?,?)",
-                    ("admin@email.com","admin123","admin","Administrador",inv_principal_id))
-        cur.execute("INSERT INTO usuarios (email,password,rol,nombre,inventario_id) VALUES (?,?,?,?,?)",
-                    ("repmotos@email.com","123456","usuario","Repuestos Motos",inv_repmotos_id))
-        cur.execute("INSERT INTO usuarios (email,password,rol,nombre,inventario_id) VALUES (?,?,?,?,?)",
-                    ("test@email.com","1234","usuario","Usuario Test",inv_principal_id))
+        cur.execute("INSERT INTO usuarios (email,password,rol,inventario_id) VALUES (?,?,?,?)",
+                    ("admin@email.com","admin123","admin",inv_principal_id))
+        cur.execute("INSERT INTO usuarios (email,password,rol,inventario_id) VALUES (?,?,?,?)",
+                    ("repmotos@email.com","123456","usuario",inv_repmotos_id))
+        cur.execute("INSERT INTO usuarios (email,password,rol,inventario_id) VALUES (?,?,?,?)",
+                    ("test@email.com","1234","usuario",inv_principal_id))
 
+        # Productos para repmotos
         productos = [
             ("Aceite 4T", "Lubricantes", 65, 25000.0),
             ("Filtro de aire", "Repuestos", 20, 15000.0),
@@ -95,6 +97,7 @@ def init_db():
         return False
 
 def repair_db():
+    """Repara la estructura de la base de datos"""
     try:
         conn = get_db()
         cur = conn.cursor()
@@ -127,35 +130,56 @@ def repair_db():
 @app.route("/login", methods=["GET","POST"])
 def login():
     if request.method == "POST":
-
+        # Obtener datos según el tipo de contenido
         if request.is_json:
             data = request.get_json()
-            email = data.get("email")
-            password = data.get("password")
+            if data:
+                email = data.get("email")
+                password = data.get("password")
+            else:
+                email = None
+                password = None
         else:
             email = request.form.get("email")
             password = request.form.get("password")
 
-        # ✅ VALIDACIÓN AGREGADA
+        # Validar campos vacíos
         if not email or not password:
-            return {"ok": False, "msg": "Correo y contraseña son requeridos"}
+            if request.is_json:
+                return {"ok": False, "msg": "Correo y contraseña son requeridos"}
+            flash("❌ Correo y contraseña son requeridos")
+            return redirect("/login")
 
-        conn = get_db()
-        cur = conn.cursor()
+        try:
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM usuarios WHERE email=? AND password=?", (email, password))
+            user = cur.fetchone()
+            conn.close()
 
-        cur.execute("SELECT * FROM usuarios WHERE email=? AND password=?", (email,password))
-        user = cur.fetchone()
-        conn.close()
+            if user:
+                session["user_id"] = user["id"]
+                session["rol"] = user["rol"]
+                session["inventario_id"] = user["inventario_id"]
+                session["nombre"] = user["email"]  # Usar email como nombre
 
-        if user:
-            session["user_id"] = user["id"]
-            session["rol"] = user["rol"]
-            session["inventario_id"] = user["inventario_id"]
-
-            return {"ok": True, "redirect": "/admin" if user["rol"] == "admin" else "/index"} \
-                if request.is_json else redirect("/admin" if user["rol"] == "admin" else "/index")
-
-        return {"ok": False, "msg": "Credenciales incorrectas"}
+                if request.is_json:
+                    return {"ok": True, "redirect": "/admin" if user["rol"] == "admin" else "/index"}
+                else:
+                    return redirect("/admin" if user["rol"] == "admin" else "/index")
+            else:
+                if request.is_json:
+                    return {"ok": False, "msg": "Credenciales incorrectas"}
+                flash("❌ Credenciales incorrectas")
+                return redirect("/login")
+                
+        except Exception as e:
+            print(f"❌ Error en login: {str(e)}", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
+            if request.is_json:
+                return {"ok": False, "msg": f"Error interno: {str(e)}"}
+            flash(f"❌ Error interno: {str(e)}")
+            return redirect("/login")
 
     return render_template("login.html")
 
@@ -163,42 +187,73 @@ def login():
 @app.route("/register", methods=["GET","POST"])
 def register():
     if request.method == "POST":
-
+        # Obtener datos según el tipo de contenido
         if request.is_json:
             data = request.get_json()
-            email = data.get("email")
-            password = data.get("password")
+            if data:
+                email = data.get("email")
+                password = data.get("password")
+            else:
+                email = None
+                password = None
         else:
             email = request.form.get("email")
             password = request.form.get("password")
 
-        # ✅ VALIDACIONES AGREGADAS
+        # Validaciones
         if not email or not password:
-            return {"ok": False, "msg": "Correo y contraseña son requeridos"}
+            if request.is_json:
+                return {"ok": False, "msg": "Correo y contraseña son requeridos"}
+            flash("❌ Correo y contraseña son requeridos")
+            return redirect("/register")
         
+        if '@' not in email or '.' not in email:
+            if request.is_json:
+                return {"ok": False, "msg": "Formato de correo inválido"}
+            flash("❌ Formato de correo inválido")
+            return redirect("/register")
+
         if len(password) < 4:
-            return {"ok": False, "msg": "La contraseña debe tener al menos 4 caracteres"}
+            if request.is_json:
+                return {"ok": False, "msg": "La contraseña debe tener al menos 4 caracteres"}
+            flash("❌ La contraseña debe tener al menos 4 caracteres")
+            return redirect("/register")
 
-        conn = get_db()
-        cur = conn.cursor()
+        try:
+            conn = get_db()
+            cur = conn.cursor()
 
-        cur.execute("SELECT * FROM usuarios WHERE email=?", (email,))
-        if cur.fetchone():
+            cur.execute("SELECT * FROM usuarios WHERE email=?", (email,))
+            if cur.fetchone():
+                conn.close()
+                if request.is_json:
+                    return {"ok": False, "msg": "Usuario ya existe"}
+                flash("❌ Usuario ya existe")
+                return redirect("/register")
+
+            cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", (f"Inventario de {email}",))
+            inventario_id = cur.lastrowid
+
+            cur.execute("""
+                INSERT INTO usuarios (email, password, rol, inventario_id)
+                VALUES (?, ?, 'usuario', ?)
+            """, (email, password, inventario_id))
+
+            conn.commit()
             conn.close()
-            return {"ok": False, "msg": "Usuario ya existe"}
 
-        cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", (f"Inventario de {email}",))
-        inventario_id = cur.lastrowid
-
-        cur.execute("""
-        INSERT INTO usuarios (email,password,rol,inventario_id)
-        VALUES (?,?, 'usuario',?)
-        """,(email,password,inventario_id))
-
-        conn.commit()
-        conn.close()
-
-        return {"ok": True, "msg": "Usuario creado correctamente"}
+            if request.is_json:
+                return {"ok": True, "msg": "Usuario creado correctamente"}
+            flash("✅ Usuario creado correctamente")
+            return redirect("/login")
+            
+        except Exception as e:
+            print(f"❌ Error en register: {str(e)}", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
+            if request.is_json:
+                return {"ok": False, "msg": f"Error interno: {str(e)}"}
+            flash(f"❌ Error interno: {str(e)}")
+            return redirect("/register")
 
     return render_template("register.html")
 
@@ -244,9 +299,10 @@ def index():
     for p in productos:
         total_valor += p["cantidad"] * p["precio"]
 
-    cur.execute("SELECT nombre, email FROM usuarios WHERE id=?", (session["user_id"],))
+    # Usar email como nombre (sin columna nombre)
+    cur.execute("SELECT email FROM usuarios WHERE id=?", (session["user_id"],))
     user = cur.fetchone()
-    nombre_usuario = user["nombre"] if user["nombre"] else user["email"]
+    nombre_usuario = user["email"] if user else "Usuario"
     
     conn.close()
 
@@ -286,9 +342,10 @@ def buscar_producto():
     for p in productos:
         total_valor += p["cantidad"] * p["precio"]
 
-    cur.execute("SELECT nombre, email FROM usuarios WHERE id=?", (session["user_id"],))
+    # Usar email como nombre (sin columna nombre)
+    cur.execute("SELECT email FROM usuarios WHERE id=?", (session["user_id"],))
     user = cur.fetchone()
-    nombre_usuario = user["nombre"] if user["nombre"] else user["email"]
+    nombre_usuario = user["email"] if user else "Usuario"
     
     conn.close()
 
@@ -430,8 +487,10 @@ def vender(id):
         flash("❌ Error en venta - Stock insuficiente")
         return redirect("/index")
 
+    # Actualizar stock
     cur.execute("UPDATE productos SET cantidad = cantidad - ? WHERE id=?", (cantidad, id))
     
+    # Registrar venta con todos los campos
     cur.execute("""
         INSERT INTO ventas (producto_id, producto, cantidad, precio, inventario_id, fecha) 
         VALUES (?, ?, ?, ?, ?, datetime('now'))
@@ -498,8 +557,10 @@ def venta():
         flash("❌ Error en venta - Stock insuficiente")
         return redirect("/ventas")
 
+    # Actualizar stock
     cur.execute("UPDATE productos SET cantidad = cantidad - ? WHERE id=?", (cantidad, producto_id))
     
+    # Registrar venta con todos los campos
     cur.execute("""
         INSERT INTO ventas (producto_id, producto, cantidad, precio, inventario_id, fecha) 
         VALUES (?, ?, ?, ?, ?, datetime('now'))
@@ -596,9 +657,9 @@ def crear_usuario_admin():
             inventario_id = cur.lastrowid
         
         cur.execute("""
-            INSERT INTO usuarios (nombre, email, password, rol, inventario_id) 
-            VALUES (?, ?, ?, ?, ?)
-        """, (nombre, email, password, rol, inventario_id))
+            INSERT INTO usuarios (email, password, rol, inventario_id)
+            VALUES (?, ?, ?, ?)
+        """, (email, password, rol, inventario_id))
         conn.commit()
         flash("✅ Usuario creado exitosamente")
     except sqlite3.IntegrityError:
@@ -884,6 +945,17 @@ def logout():
     session.clear()
     return redirect("/login")
 
+# ================= VERIFICAR BD ANTES DE CADA REQUEST =================
+@app.before_request
+def verificar_bd():
+    """Verifica que la BD exista antes de cada request"""
+    db_path = os.path.join(os.getcwd(), 'inventario.db')
+    if not os.path.exists(db_path):
+        print("⚠️ Base de datos no encontrada, recreando...", file=sys.stderr)
+        init_db()
+        print("✅ Base de datos recreada", file=sys.stderr)
+
+# ================= MAIN =================
 if __name__ == "__main__":
     print("🚀 Iniciando aplicación...", file=sys.stderr)
     print("="*50, file=sys.stderr)
@@ -896,7 +968,7 @@ if __name__ == "__main__":
     print("🔐 CREDENCIALES:", file=sys.stderr)
     print("   admin@email.com / admin123", file=sys.stderr)
     print("   repmotos@email.com / 123456", file=sys.stderr)
-    print("   test@email.com / 123456", file=sys.stderr)
+    print("   test@email.com / 1234", file=sys.stderr)
     print("="*50 + "\n", file=sys.stderr)
     
     port = int(os.environ.get("PORT", 5000))
