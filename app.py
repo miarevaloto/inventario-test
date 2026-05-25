@@ -12,8 +12,11 @@ app.secret_key = os.environ.get("SECRET_KEY", "secret_key_for_render_production"
 # ================= DB =================
 def get_db():
     db_path = os.path.join(os.getcwd(), 'inventario.db')
-    conn = sqlite3.connect(db_path)
+    # Timeout para evitar "database is locked"
+    conn = sqlite3.connect(db_path, timeout=20)
     conn.row_factory = sqlite3.Row
+    # Activar WAL mode para mejor concurrencia
+    conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
 def init_db():
@@ -130,15 +133,10 @@ def repair_db():
 @app.route("/login", methods=["GET","POST"])
 def login():
     if request.method == "POST":
-        # Obtener datos según el tipo de contenido
         if request.is_json:
             data = request.get_json()
-            if data:
-                email = data.get("email")
-                password = data.get("password")
-            else:
-                email = None
-                password = None
+            email = data.get("email") if data else None
+            password = data.get("password") if data else None
         else:
             email = request.form.get("email")
             password = request.form.get("password")
@@ -161,7 +159,8 @@ def login():
                 session["user_id"] = user["id"]
                 session["rol"] = user["rol"]
                 session["inventario_id"] = user["inventario_id"]
-                session["nombre"] = user["email"]  # Usar email como nombre
+                session["email"] = user["email"]
+                session["nombre"] = user["email"]
 
                 if request.is_json:
                     return {"ok": True, "redirect": "/admin" if user["rol"] == "admin" else "/index"}
@@ -187,15 +186,10 @@ def login():
 @app.route("/register", methods=["GET","POST"])
 def register():
     if request.method == "POST":
-        # Obtener datos según el tipo de contenido
         if request.is_json:
             data = request.get_json()
-            if data:
-                email = data.get("email")
-                password = data.get("password")
-            else:
-                email = None
-                password = None
+            email = data.get("email") if data else None
+            password = data.get("password") if data else None
         else:
             email = request.form.get("email")
             password = request.form.get("password")
@@ -299,7 +293,7 @@ def index():
     for p in productos:
         total_valor += p["cantidad"] * p["precio"]
 
-    # Usar email como nombre (sin columna nombre)
+    # Obtener email del usuario
     cur.execute("SELECT email FROM usuarios WHERE id=?", (session["user_id"],))
     user = cur.fetchone()
     nombre_usuario = user["email"] if user else "Usuario"
@@ -342,7 +336,6 @@ def buscar_producto():
     for p in productos:
         total_valor += p["cantidad"] * p["precio"]
 
-    # Usar email como nombre (sin columna nombre)
     cur.execute("SELECT email FROM usuarios WHERE id=?", (session["user_id"],))
     user = cur.fetchone()
     nombre_usuario = user["email"] if user else "Usuario"
@@ -392,6 +385,7 @@ def agregar_producto():
             flash("❌ Debe seleccionar una categoría")
             return redirect("/index")
 
+    conn = None
     try:
         conn = get_db()
         cur = conn.cursor()
@@ -402,11 +396,15 @@ def agregar_producto():
         """, (nombre, categoria, precio, cantidad, session["inventario_id"]))
 
         conn.commit()
-        conn.close()
         flash(f"✅ Producto '{nombre}' agregado exitosamente")
     except Exception as e:
         print(f"❌ Error al insertar producto: {str(e)}", file=sys.stderr)
         flash("❌ Error al agregar producto")
+        if conn:
+            conn.rollback()
+    finally:
+        if conn:
+            conn.close()
     
     return redirect("/index")
     
@@ -476,30 +474,38 @@ def vender(id):
         flash("❌ Cantidad inválida")
         return redirect("/index")
 
-    conn = get_db()
-    cur = conn.cursor()
+    conn = None
+    try:
+        conn = get_db()
+        cur = conn.cursor()
 
-    cur.execute("SELECT * FROM productos WHERE id=? AND inventario_id=?", (id, session["inventario_id"]))
-    producto = cur.fetchone()
+        cur.execute("SELECT * FROM productos WHERE id=? AND inventario_id=?", (id, session["inventario_id"]))
+        producto = cur.fetchone()
 
-    if not producto or cantidad > producto["cantidad"]:
-        conn.close()
-        flash("❌ Error en venta - Stock insuficiente")
-        return redirect("/index")
+        if not producto or cantidad > producto["cantidad"]:
+            flash("❌ Error en venta - Stock insuficiente")
+            return redirect("/index")
 
-    # Actualizar stock
-    cur.execute("UPDATE productos SET cantidad = cantidad - ? WHERE id=?", (cantidad, id))
+        # Actualizar stock
+        cur.execute("UPDATE productos SET cantidad = cantidad - ? WHERE id=?", (cantidad, id))
+        
+        # Registrar venta con todos los campos
+        cur.execute("""
+            INSERT INTO ventas (producto_id, producto, cantidad, precio, inventario_id, fecha) 
+            VALUES (?, ?, ?, ?, ?, datetime('now'))
+        """, (id, producto["nombre"], cantidad, producto["precio"], session["inventario_id"]))
+
+        conn.commit()
+        flash(f"✅ Venta realizada: {cantidad} x {producto['nombre']}")
+    except Exception as e:
+        print(f"❌ Error en venta: {str(e)}", file=sys.stderr)
+        flash("❌ Error al procesar la venta")
+        if conn:
+            conn.rollback()
+    finally:
+        if conn:
+            conn.close()
     
-    # Registrar venta con todos los campos
-    cur.execute("""
-        INSERT INTO ventas (producto_id, producto, cantidad, precio, inventario_id, fecha) 
-        VALUES (?, ?, ?, ?, ?, datetime('now'))
-    """, (id, producto["nombre"], cantidad, producto["precio"], session["inventario_id"]))
-
-    conn.commit()
-    conn.close()
-
-    flash(f"✅ Venta realizada: {cantidad} x {producto['nombre']}")
     return redirect("/index")
     
 # ================= VENTAS =================
@@ -546,30 +552,38 @@ def venta():
         flash("❌ Cantidad inválida")
         return redirect("/ventas")
 
-    conn = get_db()
-    cur = conn.cursor()
+    conn = None
+    try:
+        conn = get_db()
+        cur = conn.cursor()
 
-    cur.execute("SELECT * FROM productos WHERE id=? AND inventario_id=?", (producto_id, session["inventario_id"]))
-    producto = cur.fetchone()
+        cur.execute("SELECT * FROM productos WHERE id=? AND inventario_id=?", (producto_id, session["inventario_id"]))
+        producto = cur.fetchone()
 
-    if not producto or cantidad > producto["cantidad"]:
-        conn.close()
-        flash("❌ Error en venta - Stock insuficiente")
-        return redirect("/ventas")
+        if not producto or cantidad > producto["cantidad"]:
+            flash("❌ Error en venta - Stock insuficiente")
+            return redirect("/ventas")
 
-    # Actualizar stock
-    cur.execute("UPDATE productos SET cantidad = cantidad - ? WHERE id=?", (cantidad, producto_id))
+        # Actualizar stock
+        cur.execute("UPDATE productos SET cantidad = cantidad - ? WHERE id=?", (cantidad, producto_id))
+        
+        # Registrar venta con todos los campos
+        cur.execute("""
+            INSERT INTO ventas (producto_id, producto, cantidad, precio, inventario_id, fecha) 
+            VALUES (?, ?, ?, ?, ?, datetime('now'))
+        """, (producto_id, producto["nombre"], cantidad, producto["precio"], session["inventario_id"]))
+
+        conn.commit()
+        flash(f"✅ Venta registrada: {cantidad} x {producto['nombre']}")
+    except Exception as e:
+        print(f"❌ Error en venta: {str(e)}", file=sys.stderr)
+        flash("❌ Error al procesar la venta")
+        if conn:
+            conn.rollback()
+    finally:
+        if conn:
+            conn.close()
     
-    # Registrar venta con todos los campos
-    cur.execute("""
-        INSERT INTO ventas (producto_id, producto, cantidad, precio, inventario_id, fecha) 
-        VALUES (?, ?, ?, ?, ?, datetime('now'))
-    """, (producto_id, producto["nombre"], cantidad, producto["precio"], session["inventario_id"]))
-
-    conn.commit()
-    conn.close()
-
-    flash(f"✅ Venta registrada: {cantidad} x {producto['nombre']}")
     return redirect("/ventas")
 
 # ================= DASHBOARD =================
