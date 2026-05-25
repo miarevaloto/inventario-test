@@ -595,12 +595,15 @@ def dashboard():
     conn = get_db()
     cur = conn.cursor()
 
+    # Total de productos
     cur.execute("SELECT COUNT(*) as total FROM productos WHERE inventario_id=?", (session["inventario_id"],))
     total_productos = cur.fetchone()["total"]
 
+    # Stock total
     cur.execute("SELECT SUM(cantidad) as stock FROM productos WHERE inventario_id=?", (session["inventario_id"],))
     stock_total = cur.fetchone()["stock"] or 0
 
+    # Ventas totales
     cur.execute("""
         SELECT SUM(cantidad * precio) as ventas
         FROM ventas
@@ -608,8 +611,10 @@ def dashboard():
     """, (session["inventario_id"],))
     ventas_total = cur.fetchone()["ventas"] or 0
 
+    # Top 5 productos más vendidos
+    # ✅ IMPORTANTE: Usar 'producto' como 'nombre' para que coincida con el template
     cur.execute("""
-        SELECT producto, SUM(cantidad) as vendidos
+        SELECT producto as nombre, SUM(cantidad) as vendidos
         FROM ventas
         WHERE inventario_id=?
         GROUP BY producto
@@ -620,12 +625,15 @@ def dashboard():
 
     conn.close()
 
+    # ✅ Debug: Ver qué hay en top_productos
+    print(f"🔍 Top productos: {[dict(p) for p in top_productos]}", file=sys.stderr)
+
     return render_template("dashboard.html",
         total_productos=total_productos,
         stock_total=stock_total,
         ventas_total=ventas_total,
         top_productos=top_productos
-    ) 
+    )
     
 # ================= ADMIN =================
 @app.route("/admin")
