@@ -5,9 +5,44 @@ import io
 import os
 import sys
 import traceback
+from functools import wraps
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "secret_key_for_render_production")
+
+# ================= FORZAR RESPUESTAS JSON EN ERRORES =================
+def json_response(data, status=200):
+    """Fuerza que la respuesta sea siempre JSON"""
+    response = jsonify(data)
+    response.status_code = status
+    return response
+
+# ================= MANEJADOR DE ERRORES GLOBAL =================
+@app.errorhandler(404)
+def not_found(error):
+    """Siempre devuelve JSON para peticiones POST"""
+    print(f"❌ Error 404: {request.path}", file=sys.stderr)
+    if request.method == 'POST' or request.is_json:
+        return json_response({"ok": False, "msg": "Ruta no encontrada"}, 404)
+    return render_template("login.html")
+
+@app.errorhandler(500)
+def internal_error(error):
+    """Siempre devuelve JSON para peticiones POST"""
+    print(f"❌ Error 500: {str(error)}", file=sys.stderr)
+    traceback.print_exc(file=sys.stderr)
+    if request.method == 'POST' or request.is_json:
+        return json_response({"ok": False, "msg": "Error interno del servidor"}, 500)
+    return render_template("login.html")
+
+@app.errorhandler(Exception)
+def handle_exception(error):
+    """Cualquier error siempre devuelve JSON en POST"""
+    print(f"❌ Excepción: {str(error)}", file=sys.stderr)
+    traceback.print_exc(file=sys.stderr)
+    if request.method == 'POST' or request.is_json:
+        return json_response({"ok": False, "msg": f"Error: {str(error)}"}, 500)
+    return render_template("login.html")
 
 # ================= DB =================
 def get_db():
@@ -23,7 +58,6 @@ def init_db():
         cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='usuarios'")
         if cur.fetchone():
             conn.close()
-            # AGREGADO: Reparar estructura incluso si ya existe
             repair_db()
             return True
 
@@ -91,7 +125,6 @@ def init_db():
         conn.commit()
         conn.close()
         
-        # AGREGADO: Reparar estructura
         repair_db()
         
         return True
@@ -99,154 +132,137 @@ def init_db():
         print(f"❌ Error en init_db: {str(e)}", file=sys.stderr)
         return False
 
-
-# ================= REPARAR BASE DE DATOS =================
 def repair_db():
-    """Repara la estructura de la base de datos - Agrega columnas faltantes"""
+    """Repara la estructura de la base de datos"""
     try:
         conn = get_db()
         cur = conn.cursor()
         
-        # Verificar tabla ventas
         cur.execute("PRAGMA table_info(ventas)")
         columnas = [col[1] for col in cur.fetchall()]
         
-        print(f"📋 Columnas en ventas: {columnas}", file=sys.stderr)
-        
-        # Agregar columna precio si no existe
         if 'precio' not in columnas:
-            print("📝 Agregando columna 'precio' a ventas...", file=sys.stderr)
             cur.execute("ALTER TABLE ventas ADD COLUMN precio REAL DEFAULT 0")
-            print("✅ Columna 'precio' agregada", file=sys.stderr)
         
-        # Agregar columna producto si no existe
         if 'producto' not in columnas:
-            print("📝 Agregando columna 'producto' a ventas...", file=sys.stderr)
             cur.execute("ALTER TABLE ventas ADD COLUMN producto TEXT DEFAULT ''")
-            print("✅ Columna 'producto' agregada", file=sys.stderr)
         
-        # Agregar columna fecha si no existe
         if 'fecha' not in columnas:
-            print("📝 Agregando columna 'fecha' a ventas...", file=sys.stderr)
             cur.execute("ALTER TABLE ventas ADD COLUMN fecha TEXT DEFAULT CURRENT_TIMESTAMP")
-            print("✅ Columna 'fecha' agregada", file=sys.stderr)
         
-        # Agregar columna inventario_id si no existe
         if 'inventario_id' not in columnas:
-            print("📝 Agregando columna 'inventario_id' a ventas...", file=sys.stderr)
             cur.execute("ALTER TABLE ventas ADD COLUMN inventario_id INTEGER DEFAULT 0")
-            print("✅ Columna 'inventario_id' agregada", file=sys.stderr)
-            # Actualizar ventas existentes con inventario_id
             cur.execute("UPDATE ventas SET inventario_id = ? WHERE inventario_id = 0", (1,))
-            print("✅ Ventas existentes actualizadas", file=sys.stderr)
         
         conn.commit()
         conn.close()
-        print("✅ Base de datos reparada exitosamente", file=sys.stderr)
         return True
     except Exception as e:
         print(f"❌ Error reparando BD: {str(e)}", file=sys.stderr)
-        traceback.print_exc(file=sys.stderr)
         return False
-
 
 # ================= LOGIN =================
 @app.route("/", methods=["GET","POST"])
 @app.route("/login", methods=["GET","POST"])
 def login():
     if request.method == "POST":
-
+        # Siempre tratar como JSON
         if request.is_json:
             data = request.get_json()
-            email = data.get("email")
-            password = data.get("password")
         else:
-            email = request.form.get("email")
-            password = request.form.get("password")
+            data = {
+                "email": request.form.get("email"),
+                "password": request.form.get("password")
+            }
+        
+        email = data.get("email") if data else None
+        password = data.get("password") if data else None
 
-        # ✅ VALIDACIÓN BACKEND: Campos vacíos
+        # Validación
         if not email or not password:
-            if request.is_json:
-                return {"ok": False, "msg": "Correo y contraseña son requeridos"}
-            flash("❌ Correo y contraseña son requeridos")
-            return redirect("/login")
+            return json_response({"ok": False, "msg": "Correo y contraseña son requeridos"}, 400)
 
-        conn = get_db()
-        cur = conn.cursor()
+        try:
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM usuarios WHERE email=? AND password=?", (email, password))
+            user = cur.fetchone()
+            conn.close()
 
-        cur.execute("SELECT * FROM usuarios WHERE email=? AND password=?", (email,password))
-        user = cur.fetchone()
-        conn.close()
-
-        if user:
-            session["user_id"] = user["id"]
-            session["rol"] = user["rol"]
-            session["inventario_id"] = user["inventario_id"]
-            session["nombre"] = user["nombre"] if user["nombre"] else user["email"]
-
-            return {"ok": True, "redirect": "/admin" if user["rol"] == "admin" else "/index"} \
-                if request.is_json else redirect("/admin" if user["rol"] == "admin" else "/index")
-
-        return {"ok": False, "msg": "Credenciales incorrectas"}
+            if user:
+                session["user_id"] = user["id"]
+                session["rol"] = user["rol"]
+                session["inventario_id"] = user["inventario_id"]
+                session["nombre"] = user["nombre"] if user["nombre"] else user["email"]
+                
+                return json_response({
+                    "ok": True, 
+                    "redirect": "/admin" if user["rol"] == "admin" else "/index"
+                })
+            else:
+                return json_response({"ok": False, "msg": "Credenciales incorrectas"}, 401)
+                
+        except Exception as e:
+            print(f"❌ Error en login: {str(e)}", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
+            return json_response({"ok": False, "msg": f"Error interno: {str(e)}"}, 500)
 
     return render_template("login.html")
-
 
 # ================= REGISTER =================
 @app.route("/register", methods=["GET","POST"])
 def register():
     if request.method == "POST":
-
+        # Siempre tratar como JSON
         if request.is_json:
             data = request.get_json()
-            email = data.get("email")
-            password = data.get("password")
         else:
-            email = request.form.get("email")
-            password = request.form.get("password")
+            data = {
+                "email": request.form.get("email"),
+                "password": request.form.get("password")
+            }
+        
+        email = data.get("email") if data else None
+        password = data.get("password") if data else None
 
-        # ✅ VALIDACIONES BACKEND
+        # Validaciones
         if not email or not password:
-            if request.is_json:
-                return {"ok": False, "msg": "Correo y contraseña son requeridos"}
-            flash("❌ Correo y contraseña son requeridos")
-            return redirect("/register")
+            return json_response({"ok": False, "msg": "Correo y contraseña son requeridos"}, 400)
 
         if '@' not in email or '.' not in email:
-            if request.is_json:
-                return {"ok": False, "msg": "Formato de correo inválido"}
-            flash("❌ Formato de correo inválido")
-            return redirect("/register")
+            return json_response({"ok": False, "msg": "Formato de correo inválido"}, 400)
 
         if len(password) < 4:
-            if request.is_json:
-                return {"ok": False, "msg": "La contraseña debe tener al menos 4 caracteres"}
-            flash("❌ La contraseña debe tener al menos 4 caracteres")
-            return redirect("/register")
+            return json_response({"ok": False, "msg": "La contraseña debe tener al menos 4 caracteres"}, 400)
 
-        conn = get_db()
-        cur = conn.cursor()
+        try:
+            conn = get_db()
+            cur = conn.cursor()
 
-        cur.execute("SELECT * FROM usuarios WHERE email=?", (email,))
-        if cur.fetchone():
+            cur.execute("SELECT * FROM usuarios WHERE email=?", (email,))
+            if cur.fetchone():
+                conn.close()
+                return json_response({"ok": False, "msg": "Usuario ya existe"}, 409)
+
+            cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", (f"Inventario de {email}",))
+            inventario_id = cur.lastrowid
+
+            cur.execute("""
+                INSERT INTO usuarios (email, password, rol, inventario_id)
+                VALUES (?, ?, 'usuario', ?)
+            """, (email, password, inventario_id))
+
+            conn.commit()
             conn.close()
-            return {"ok": False, "msg": "Usuario ya existe"}
 
-        cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", (f"Inventario de {email}",))
-        inventario_id = cur.lastrowid
-
-        cur.execute("""
-        INSERT INTO usuarios (email,password,rol,inventario_id)
-        VALUES (?,?, 'usuario',?)
-        """,(email,password,inventario_id))
-
-        conn.commit()
-        conn.close()
-
-        return {"ok": True, "msg": "Usuario creado correctamente"}
+            return json_response({"ok": True, "msg": "Usuario creado correctamente"}, 201)
+            
+        except Exception as e:
+            print(f"❌ Error en register: {str(e)}", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
+            return json_response({"ok": False, "msg": f"Error interno: {str(e)}"}, 500)
 
     return render_template("register.html")
-
 
 # ================= HEALTH =================
 @app.route("/health")
@@ -267,7 +283,6 @@ def health():
         })
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
-
 
 # ================= INDEX =================
 @app.route("/index")
@@ -291,7 +306,6 @@ def index():
     for p in productos:
         total_valor += p["cantidad"] * p["precio"]
 
-    # Obtener nombre del usuario para mostrar
     cur.execute("SELECT nombre, email FROM usuarios WHERE id=?", (session["user_id"],))
     user = cur.fetchone()
     nombre_usuario = user["nombre"] if user["nombre"] else user["email"]
@@ -300,7 +314,6 @@ def index():
 
     return render_template("index.html", productos=productos, categorias=categorias, 
                          total_valor=total_valor, producto_buscado=None, nombre=nombre_usuario)
-
 
 # ================= BUSCAR PRODUCTO =================
 @app.route("/buscar_producto", methods=["POST"])
@@ -335,7 +348,6 @@ def buscar_producto():
     for p in productos:
         total_valor += p["cantidad"] * p["precio"]
 
-    # Obtener nombre del usuario
     cur.execute("SELECT nombre, email FROM usuarios WHERE id=?", (session["user_id"],))
     user = cur.fetchone()
     nombre_usuario = user["nombre"] if user["nombre"] else user["email"]
@@ -344,7 +356,6 @@ def buscar_producto():
 
     return render_template("index.html", productos=productos, categorias=categorias, 
                          producto_buscado=producto, total_valor=total_valor, nombre=nombre_usuario)
-
 
 # ================= AGREGAR PRODUCTO =================
 @app.route("/agregar_producto", methods=["POST"])
@@ -372,7 +383,6 @@ def agregar_producto():
         flash("❌ Valores inválidos (precio y cantidad deben ser mayores a 0)")
         return redirect("/index")
 
-    # Obtener la categoría correctamente (como viene del formulario)
     categoria_select = request.form.get("categoria_select", "")
     nueva_categoria = request.form.get("nueva_categoria", "")
     
@@ -419,7 +429,6 @@ def delete(id):
     
     flash("✅ Producto eliminado")
     return redirect("/index")
-
 
 # ================= SUMAR STOCK =================
 @app.route("/sumar/<int:id>", methods=["POST"])
@@ -483,10 +492,8 @@ def vender(id):
         flash("❌ Error en venta - Stock insuficiente")
         return redirect("/index")
 
-    # Actualizar stock
     cur.execute("UPDATE productos SET cantidad = cantidad - ? WHERE id=?", (cantidad, id))
     
-    # ✅ REGISTRAR VENTA CON TODOS LOS CAMPOS
     cur.execute("""
         INSERT INTO ventas (producto_id, producto, cantidad, precio, inventario_id, fecha) 
         VALUES (?, ?, ?, ?, ?, datetime('now'))
@@ -507,11 +514,9 @@ def ventas():
     conn = get_db()
     cur = conn.cursor()
 
-    # Productos para el formulario de venta
     cur.execute("SELECT * FROM productos WHERE inventario_id=?", (session["inventario_id"],))
     productos = cur.fetchall()
 
-    # ✅ CONSULTA CORREGIDA - ahora incluye todos los campos
     cur.execute("""
         SELECT v.id, v.producto, v.cantidad, v.precio, v.fecha,
                (v.cantidad * v.precio) as total
@@ -521,13 +526,11 @@ def ventas():
     """, (session["inventario_id"],))
     ventas = cur.fetchall()
 
-    # Calcular total de ventas
     total_ventas = sum(venta["total"] for venta in ventas) if ventas else 0
 
     conn.close()
 
     return render_template("ventas.html", productos=productos, ventas=ventas, total_ventas=total_ventas)
-
 
 # ================= REGISTRAR VENTA =================
 @app.route("/venta", methods=["POST"])
@@ -557,10 +560,8 @@ def venta():
         flash("❌ Error en venta - Stock insuficiente")
         return redirect("/ventas")
 
-    # Actualizar stock
     cur.execute("UPDATE productos SET cantidad = cantidad - ? WHERE id=?", (cantidad, producto_id))
     
-    # ✅ REGISTRAR VENTA CON TODOS LOS CAMPOS
     cur.execute("""
         INSERT INTO ventas (producto_id, producto, cantidad, precio, inventario_id, fecha) 
         VALUES (?, ?, ?, ?, ?, datetime('now'))
@@ -581,15 +582,12 @@ def dashboard():
     conn = get_db()
     cur = conn.cursor()
 
-    # Total de productos
     cur.execute("SELECT COUNT(*) as total FROM productos WHERE inventario_id=?", (session["inventario_id"],))
     total_productos = cur.fetchone()["total"]
 
-    # Stock total
     cur.execute("SELECT SUM(cantidad) as stock FROM productos WHERE inventario_id=?", (session["inventario_id"],))
     stock_total = cur.fetchone()["stock"] or 0
 
-    # ✅ Ventas totales (usando la tabla ventas directamente)
     cur.execute("""
         SELECT SUM(cantidad * precio) as ventas
         FROM ventas
@@ -597,7 +595,6 @@ def dashboard():
     """, (session["inventario_id"],))
     ventas_total = cur.fetchone()["ventas"] or 0
 
-    # ✅ Top 5 productos más vendidos
     cur.execute("""
         SELECT producto, SUM(cantidad) as vendidos
         FROM ventas
@@ -639,7 +636,6 @@ def admin():
 
     return render_template("admin.html", usuarios=usuarios, inventarios=inventarios)
 
-
 # ================= CREAR USUARIO ADMIN =================
 @app.route("/crear_usuario_admin", methods=["POST"])
 def crear_usuario_admin():
@@ -674,7 +670,6 @@ def crear_usuario_admin():
     
     return redirect("/admin")
 
-
 # ================= ASIGNAR INVENTARIO =================
 @app.route("/asignar", methods=["POST"])
 def asignar_inventario():
@@ -693,7 +688,6 @@ def asignar_inventario():
     flash("✅ Inventario asignado correctamente")
     return redirect("/admin")
 
-
 # ================= CREAR INVENTARIO =================
 @app.route("/crear_inventario", methods=["POST"])
 def crear_inventario():
@@ -710,7 +704,6 @@ def crear_inventario():
     
     flash(f"✅ Inventario '{nombre}' creado exitosamente")
     return redirect("/admin")
-
 
 # ================= MODIFICAR INVENTARIO =================
 @app.route("/modificar_inventario", methods=["POST"])
@@ -729,7 +722,6 @@ def modificar_inventario():
     
     flash("✅ Inventario modificado exitosamente")
     return redirect("/admin")
-
 
 # ================= ELIMINAR INVENTARIO =================
 @app.route("/eliminar_inventario", methods=["POST"])
@@ -761,7 +753,6 @@ def eliminar_inventario():
         conn.close()
     
     return redirect("/admin")
-
 
 # ================= ELIMINAR USUARIO =================
 @app.route("/eliminar_usuario/<int:id>")
@@ -796,7 +787,6 @@ def eliminar_usuario(id):
     flash("✅ Usuario eliminado")
     return redirect("/admin")
 
-
 # ================= REPORTE PDF =================
 @app.route("/reporte_pdf")
 def reporte_pdf():
@@ -807,7 +797,7 @@ def reporte_pdf():
         from reportlab.lib.pagesizes import letter, landscape
         from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+        from reportlab.lib.enums import TA_CENTER
         from reportlab.lib import colors
         from reportlab.lib.units import inch
         from datetime import datetime
@@ -819,7 +809,6 @@ def reporte_pdf():
         
         styles = getSampleStyleSheet()
         
-        # Estilo para título
         titulo_style = ParagraphStyle(
             'TituloStyle',
             parent=styles['Title'],
@@ -831,11 +820,9 @@ def reporte_pdf():
         
         story = []
         
-        # Título
         story.append(Paragraph("📦 REPORTE DE INVENTARIO", titulo_style))
         story.append(Spacer(1, 10))
         
-        # Fecha y usuario
         fecha_actual = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         nombre_usuario = session.get('nombre', session.get('email', 'Usuario'))
         
@@ -846,7 +833,6 @@ def reporte_pdf():
         conn = get_db()
         cur = conn.cursor()
         
-        # Obtener estadísticas
         cur.execute("SELECT COUNT(*) as total FROM productos WHERE inventario_id=?", (session["inventario_id"],))
         total_productos = cur.fetchone()["total"] or 0
         
@@ -859,7 +845,6 @@ def reporte_pdf():
         cur.execute("SELECT COUNT(DISTINCT categoria) as total FROM productos WHERE inventario_id=?", (session["inventario_id"],))
         total_categorias = cur.fetchone()["total"] or 0
         
-        # Tabla de resumen
         resumen_data = [
             ["Total Productos", "Stock Total", "Valor Inventario", "Categorías"],
             [f"{total_productos}", f"{stock_total} und.", f"${valor_total:,.2f}", f"{total_categorias}"]
@@ -881,7 +866,6 @@ def reporte_pdf():
         story.append(resumen_table)
         story.append(Spacer(1, 20))
         
-        # Listado de productos
         story.append(Paragraph("📋 LISTADO DE PRODUCTOS", titulo_style))
         story.append(Spacer(1, 10))
         
@@ -937,7 +921,6 @@ def reporte_pdf():
         
         conn.close()
         
-        # Pie de página
         story.append(Spacer(1, 30))
         story.append(Paragraph(f"Reporte generado el {datetime.now().strftime('%d/%m/%Y a las %H:%M:%S')}", 
                               styles['Normal']))
@@ -957,13 +940,21 @@ def reporte_pdf():
         flash(f"❌ Error al generar el reporte: {str(e)}")
         return redirect("/index")
 
-
 # ================= LOGOUT =================
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect("/login")
 
+# ================= VERIFICAR BD ANTES DE CADA REQUEST =================
+@app.before_request
+def verificar_bd():
+    """Verifica que la BD exista antes de cada request"""
+    db_path = os.path.join(os.getcwd(), 'inventario.db')
+    if not os.path.exists(db_path):
+        print("⚠️ Base de datos no encontrada, recreando...", file=sys.stderr)
+        init_db()
+        print("✅ Base de datos recreada", file=sys.stderr)
 
 # ================= MAIN =================
 if __name__ == "__main__":
