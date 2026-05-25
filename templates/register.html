@@ -26,32 +26,48 @@
     const email = document.getElementById('email').value.trim();
     const password = document.getElementById('password').value.trim();
 
-    //if (!email || !password) {
-      //alert('Por favor complete todos los campos');
-      //return;
-    //}
+    // ✅ VALIDACIÓN CORREGIDA - AHORA SÍ VALIDA CAMPOS VACÍOS
+    if (!email || !password) {
+      alert('❌ Por favor complete todos los campos (correo y contraseña)');
+      return;
+    }
+
+    // ✅ VALIDACIÓN EXTRA: formato de email
+    if (!email.includes('@') || !email.includes('.')) {
+      alert('❌ Por favor ingrese un correo electrónico válido');
+      return;
+    }
+
+    // ✅ VALIDACIÓN EXTRA: contraseña muy corta
+    if (password.length < 4) {
+      alert('❌ La contraseña debe tener al menos 4 caracteres');
+      return;
+    }
 
     try {
       const response = await axios.post("/register", { email, password });
 
-      // Verificar que la respuesta sea JSON
       if (typeof response.data !== "object") {
         console.error("Respuesta inesperada:", response.data);
-        alert("Error del servidor: respuesta no válida (HTML recibido en lugar de JSON)");
+        alert("❌ Error del servidor: respuesta no válida");
         return;
       }
 
       console.log("Respuesta:", response.data);
 
       if (response.data.ok) {
-        alert(response.data.msg || "Usuario creado correctamente ✅");
+        alert("✅ " + (response.data.msg || "Usuario creado correctamente"));
         window.location = "/login";
       } else {
-        alert(response.data.msg || "Error al crear usuario");
+        alert("❌ " + (response.data.msg || "Error al crear usuario"));
       }
     } catch (error) {
       console.error("Error:", error);
-      alert("Error al conectar con el servidor: " + (error.message || "desconocido"));
+      if (error.response && error.response.data && error.response.data.msg) {
+        alert("❌ " + error.response.data.msg);
+      } else {
+        alert("❌ Error al conectar con el servidor: " + (error.message || "desconocido"));
+      }
     }
   }
 
