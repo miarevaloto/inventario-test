@@ -3,6 +3,18 @@
 <head>
 <title>Ventas</title>
 <link rel="stylesheet" href="/static/style.css">
+<style>
+  .total-ventas {
+    font-size: 24px;
+    font-weight: bold;
+    color: #28a745;
+    text-align: right;
+    margin-top: 20px;
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 8px;
+  }
+</style>
 </head>
 
 <body>
@@ -33,13 +45,13 @@
 
 <select name="producto_id" required>
     {% for p in productos %}
-        <option value="{{p['id']}}">{{p['nombre']}}</option>
+        <option value="{{p['id']}}">{{p['nombre']}} - Stock: {{p['cantidad']}} - ${{p['precio']}}</option>
     {% endfor %}
 </select>
 
-<input name="cantidad" type="number" placeholder="Cantidad" required>
+<input name="cantidad" type="number" placeholder="Cantidad" required min="1">
 
-<button>Vender</button>
+<button class="btn btn-primary">Vender</button>
 
 </form>
 </div>
@@ -54,18 +66,35 @@
 <th>ID</th>
 <th>Producto</th>
 <th>Cantidad</th>
+<th>Precio Unit.</th>
+<th>Total</th>
+<th>Fecha</th>
 </tr>
 </thead>
 
+<tbody>
 {% for v in ventas %}
 <tr>
 <td>{{v["id"]}}</td>
 <td>{{v["producto"]}}</td>
 <td>{{v["cantidad"]}}</td>
+<td>${{ "{:,.2f}".format(v["precio"]) }}</td>
+<td>${{ "{:,.2f}".format(v["total"]) }}</td>
+<td>{{v["fecha"]}}</td>
+</tr>
+{% else %}
+<tr>
+<td colspan="6">No hay ventas registradas</td>
 </tr>
 {% endfor %}
-
+</tbody>
 </table>
+
+<!-- ✅ TOTAL DE VENTAS AGREGADO -->
+<div class="total-ventas">
+    💰 TOTAL VENTAS: ${{ "{:,.2f}".format(total_ventas) }}
+</div>
+
 </div>
 
 </div>
