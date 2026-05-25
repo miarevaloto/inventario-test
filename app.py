@@ -612,27 +612,43 @@ def dashboard():
     ventas_total = cur.fetchone()["ventas"] or 0
 
     # Top 5 productos más vendidos
-    # ✅ IMPORTANTE: Usar 'producto' como 'nombre' para que coincida con el template
     cur.execute("""
-        SELECT producto as nombre, SUM(cantidad) as vendidos
-        FROM ventas
-        WHERE inventario_id=?
-        GROUP BY producto
+        SELECT 
+            CASE 
+                WHEN v.producto IS NOT NULL AND v.producto != '' THEN v.producto
+                ELSE p.nombre
+            END as nombre,
+            SUM(v.cantidad) as vendidos
+        FROM ventas v
+        LEFT JOIN productos p ON v.producto_id = p.id
+        WHERE v.inventario_id=?
+        GROUP BY 
+            CASE 
+                WHEN v.producto IS NOT NULL AND v.producto != '' THEN v.producto
+                ELSE p.nombre
+            END
         ORDER BY vendidos DESC
         LIMIT 5
     """, (session["inventario_id"],))
     top_productos = cur.fetchall()
 
-    conn.close()
+    # ✅ NUEVO: Productos con stock bajo (menos de 5 unidades)
+    cur.execute("""
+        SELECT nombre, cantidad, precio
+        FROM productos 
+        WHERE inventario_id=? AND cantidad < 5
+        ORDER BY cantidad ASC
+    """, (session["inventario_id"],))
+    productos_bajo_stock = cur.fetchall()
 
-    # ✅ Debug: Ver qué hay en top_productos
-    print(f"🔍 Top productos: {[dict(p) for p in top_productos]}", file=sys.stderr)
+    conn.close()
 
     return render_template("dashboard.html",
         total_productos=total_productos,
         stock_total=stock_total,
         ventas_total=ventas_total,
-        top_productos=top_productos
+        top_productos=top_productos,
+        productos_bajo_stock=productos_bajo_stock  # ✅ Enviar al template
     )
     
 # ================= ADMIN =================
