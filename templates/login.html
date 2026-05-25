@@ -25,10 +25,11 @@
     const email = document.getElementById('email').value.trim();
     const password = document.getElementById('password').value.trim();
 
-    //if (!email || !password) {
-      //alert('Por favor ingrese correo y contraseña');
-      //return;
-    //}
+    // ✅ VALIDACIÓN CORREGIDA - AHORA SÍ VALIDA CAMPOS VACÍOS
+    if (!email || !password) {
+      alert('❌ Por favor ingrese correo y contraseña');
+      return;
+    }
 
     try {
       console.log('Enviando petición a /login');
@@ -39,12 +40,11 @@
         body: JSON.stringify({ email, password })
       });
 
-      // Verificar tipo de respuesta antes de parsear
       const contentType = response.headers.get('content-type') || '';
       if (!contentType.includes('application/json')) {
         const text = await response.text();
         console.error('Respuesta inesperada del servidor:', text);
-        alert('Error del servidor: respuesta no válida (HTML recibido en lugar de JSON)');
+        alert('Error del servidor: respuesta no válida');
         return;
       }
 
@@ -54,11 +54,11 @@
       if (data.ok) {
         window.location.href = data.redirect;
       } else {
-        alert(data.msg || "Credenciales incorrectas");
+        alert(data.msg || "❌ Credenciales incorrectas");
       }
     } catch (error) {
       console.error('Error:', error);
-      alert('Error al conectar con el servidor: ' + error.message);
+      alert('❌ Error al conectar con el servidor: ' + error.message);
     }
   }
 
