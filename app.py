@@ -66,7 +66,7 @@ def init_db():
         cur.execute("INSERT INTO usuarios (email,password,rol,nombre,inventario_id) VALUES (?,?,?,?,?)",
                     ("repmotos@email.com","123456","usuario","Repuestos Motos",inv_repmotos_id))
         cur.execute("INSERT INTO usuarios (email,password,rol,nombre,inventario_id) VALUES (?,?,?,?,?)",
-                    ("test@email.com","","123","Usuario Test",inv_principal_id))
+                    ("test@email.com","123","usuario","Usuario Test",inv_principal_id))
 
         # Productos para repmotos
         productos = [
