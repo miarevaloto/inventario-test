@@ -9,40 +9,6 @@ import traceback
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "secret_key_for_render_production")
 
-# ================= FORZAR RESPUESTAS JSON EN ERRORES =================
-def json_response(data, status=200):
-    """Fuerza que la respuesta sea siempre JSON"""
-    response = jsonify(data)
-    response.status_code = status
-    return response
-
-# ================= MANEJADOR DE ERRORES GLOBAL =================
-@app.errorhandler(404)
-def not_found(error):
-    """Siempre devuelve JSON para peticiones POST"""
-    print(f"❌ Error 404: {request.path}", file=sys.stderr)
-    if request.method == 'POST' or request.is_json:
-        return json_response({"ok": False, "msg": "Ruta no encontrada"}, 404)
-    return render_template("login.html")
-
-@app.errorhandler(500)
-def internal_error(error):
-    """Siempre devuelve JSON para peticiones POST"""
-    print(f"❌ Error 500: {str(error)}", file=sys.stderr)
-    traceback.print_exc(file=sys.stderr)
-    if request.method == 'POST' or request.is_json:
-        return json_response({"ok": False, "msg": "Error interno del servidor"}, 500)
-    return render_template("login.html")
-
-@app.errorhandler(Exception)
-def handle_exception(error):
-    """Cualquier error siempre devuelve JSON en POST"""
-    print(f"❌ Excepción: {str(error)}", file=sys.stderr)
-    traceback.print_exc(file=sys.stderr)
-    if request.method == 'POST' or request.is_json:
-        return json_response({"ok": False, "msg": f"Error: {str(error)}"}, 500)
-    return render_template("login.html")
-
 # ================= DB =================
 def get_db():
     db_path = os.path.join(os.getcwd(), 'inventario.db')
@@ -60,7 +26,6 @@ def init_db():
             repair_db()
             return True
 
-        # Crear tablas
         cur.execute("""CREATE TABLE usuarios (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             email TEXT UNIQUE NOT NULL,
@@ -88,7 +53,6 @@ def init_db():
             inventario_id INTEGER
         )""")
 
-        # Datos de prueba
         cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", ("Principal",))
         inv_principal_id = cur.lastrowid
         cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", ("Repmotos",))
@@ -101,7 +65,6 @@ def init_db():
         cur.execute("INSERT INTO usuarios (email,password,rol,nombre,inventario_id) VALUES (?,?,?,?,?)",
                     ("test@email.com","1234","usuario","Usuario Test",inv_principal_id))
 
-        # Productos para repmotos
         productos = [
             ("Aceite 4T", "Lubricantes", 65, 25000.0),
             ("Filtro de aire", "Repuestos", 20, 15000.0),
@@ -132,7 +95,6 @@ def init_db():
         return False
 
 def repair_db():
-    """Repara la estructura de la base de datos"""
     try:
         conn = get_db()
         cur = conn.cursor()
@@ -165,42 +127,35 @@ def repair_db():
 @app.route("/login", methods=["GET","POST"])
 def login():
     if request.method == "POST":
-        # ✅ CORREGIDO: Funciona con JSON o FORM
-        data = request.get_json(silent=True) or request.form.to_dict()
-        
-        if not data:
-            return json_response({"ok": False, "msg": "No se recibieron datos"}, 400)
-        
-        email = data.get("email", "").strip()
-        password = data.get("password", "").strip()
 
+        if request.is_json:
+            data = request.get_json()
+            email = data.get("email")
+            password = data.get("password")
+        else:
+            email = request.form.get("email")
+            password = request.form.get("password")
+
+        # ✅ VALIDACIÓN AGREGADA
         if not email or not password:
-            return json_response({"ok": False, "msg": "Correo y contraseña son requeridos"}, 400)
+            return {"ok": False, "msg": "Correo y contraseña son requeridos"}
 
-        try:
-            conn = get_db()
-            cur = conn.cursor()
-            cur.execute("SELECT * FROM usuarios WHERE email=? AND password=?", (email, password))
-            user = cur.fetchone()
-            conn.close()
+        conn = get_db()
+        cur = conn.cursor()
 
-            if user:
-                session["user_id"] = user["id"]
-                session["rol"] = user["rol"]
-                session["inventario_id"] = user["inventario_id"]
-                session["nombre"] = user["nombre"] if user["nombre"] else user["email"]
-                
-                return json_response({
-                    "ok": True, 
-                    "redirect": "/admin" if user["rol"] == "admin" else "/index"
-                })
-            else:
-                return json_response({"ok": False, "msg": "Credenciales incorrectas"}, 401)
-                
-        except Exception as e:
-            print(f"❌ Error en login: {str(e)}", file=sys.stderr)
-            traceback.print_exc(file=sys.stderr)
-            return json_response({"ok": False, "msg": f"Error interno: {str(e)}"}, 500)
+        cur.execute("SELECT * FROM usuarios WHERE email=? AND password=?", (email,password))
+        user = cur.fetchone()
+        conn.close()
+
+        if user:
+            session["user_id"] = user["id"]
+            session["rol"] = user["rol"]
+            session["inventario_id"] = user["inventario_id"]
+
+            return {"ok": True, "redirect": "/admin" if user["rol"] == "admin" else "/index"} \
+                if request.is_json else redirect("/admin" if user["rol"] == "admin" else "/index")
+
+        return {"ok": False, "msg": "Credenciales incorrectas"}
 
     return render_template("login.html")
 
@@ -208,50 +163,42 @@ def login():
 @app.route("/register", methods=["GET","POST"])
 def register():
     if request.method == "POST":
-        # ✅ CORREGIDO: Funciona con JSON o FORM
-        data = request.get_json(silent=True) or request.form.to_dict()
-        
-        if not data:
-            return json_response({"ok": False, "msg": "No se recibieron datos"}, 400)
-        
-        email = data.get("email", "").strip()
-        password = data.get("password", "").strip()
 
+        if request.is_json:
+            data = request.get_json()
+            email = data.get("email")
+            password = data.get("password")
+        else:
+            email = request.form.get("email")
+            password = request.form.get("password")
+
+        # ✅ VALIDACIONES AGREGADAS
         if not email or not password:
-            return json_response({"ok": False, "msg": "Correo y contraseña son requeridos"}, 400)
-
-        if '@' not in email or '.' not in email:
-            return json_response({"ok": False, "msg": "Formato de correo inválido"}, 400)
-
+            return {"ok": False, "msg": "Correo y contraseña son requeridos"}
+        
         if len(password) < 4:
-            return json_response({"ok": False, "msg": "La contraseña debe tener al menos 4 caracteres"}, 400)
+            return {"ok": False, "msg": "La contraseña debe tener al menos 4 caracteres"}
 
-        try:
-            conn = get_db()
-            cur = conn.cursor()
+        conn = get_db()
+        cur = conn.cursor()
 
-            cur.execute("SELECT * FROM usuarios WHERE email=?", (email,))
-            if cur.fetchone():
-                conn.close()
-                return json_response({"ok": False, "msg": "Usuario ya existe"}, 409)
-
-            cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", (f"Inventario de {email}",))
-            inventario_id = cur.lastrowid
-
-            cur.execute("""
-                INSERT INTO usuarios (email, password, rol, inventario_id)
-                VALUES (?, ?, 'usuario', ?)
-            """, (email, password, inventario_id))
-
-            conn.commit()
+        cur.execute("SELECT * FROM usuarios WHERE email=?", (email,))
+        if cur.fetchone():
             conn.close()
+            return {"ok": False, "msg": "Usuario ya existe"}
 
-            return json_response({"ok": True, "msg": "Usuario creado correctamente"}, 201)
-            
-        except Exception as e:
-            print(f"❌ Error en register: {str(e)}", file=sys.stderr)
-            traceback.print_exc(file=sys.stderr)
-            return json_response({"ok": False, "msg": f"Error interno: {str(e)}"}, 500)
+        cur.execute("INSERT INTO inventarios (nombre) VALUES (?)", (f"Inventario de {email}",))
+        inventario_id = cur.lastrowid
+
+        cur.execute("""
+        INSERT INTO usuarios (email,password,rol,inventario_id)
+        VALUES (?,?, 'usuario',?)
+        """,(email,password,inventario_id))
+
+        conn.commit()
+        conn.close()
+
+        return {"ok": True, "msg": "Usuario creado correctamente"}
 
     return render_template("register.html")
 
@@ -937,17 +884,6 @@ def logout():
     session.clear()
     return redirect("/login")
 
-# ================= VERIFICAR BD ANTES DE CADA REQUEST =================
-@app.before_request
-def verificar_bd():
-    """Verifica que la BD exista antes de cada request"""
-    db_path = os.path.join(os.getcwd(), 'inventario.db')
-    if not os.path.exists(db_path):
-        print("⚠️ Base de datos no encontrada, recreando...", file=sys.stderr)
-        init_db()
-        print("✅ Base de datos recreada", file=sys.stderr)
-
-# ================= MAIN =================
 if __name__ == "__main__":
     print("🚀 Iniciando aplicación...", file=sys.stderr)
     print("="*50, file=sys.stderr)
