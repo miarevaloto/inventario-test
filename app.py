@@ -166,19 +166,19 @@ def repair_db():
 @app.route("/login", methods=["GET","POST"])
 def login():
     if request.method == "POST":
-        # Siempre tratar como JSON
+        # Obtener datos según el tipo de contenido
         if request.is_json:
             data = request.get_json()
         else:
-            data = {
-                "email": request.form.get("email"),
-                "password": request.form.get("password")
-            }
+            data = request.form.to_dict()
         
-        email = data.get("email") if data else None
-        password = data.get("password") if data else None
+        # Validar que hay datos
+        if not data:
+            return json_response({"ok": False, "msg": "No se recibieron datos"}, 400)
+        
+        email = data.get("email", "").strip()
+        password = data.get("password", "").strip()
 
-        # Validación
         if not email or not password:
             return json_response({"ok": False, "msg": "Correo y contraseña son requeridos"}, 400)
 
@@ -204,7 +204,6 @@ def login():
                 
         except Exception as e:
             print(f"❌ Error en login: {str(e)}", file=sys.stderr)
-            traceback.print_exc(file=sys.stderr)
             return json_response({"ok": False, "msg": f"Error interno: {str(e)}"}, 500)
 
     return render_template("login.html")
@@ -213,19 +212,19 @@ def login():
 @app.route("/register", methods=["GET","POST"])
 def register():
     if request.method == "POST":
-        # Siempre tratar como JSON
+        # Obtener datos según el tipo de contenido
         if request.is_json:
             data = request.get_json()
         else:
-            data = {
-                "email": request.form.get("email"),
-                "password": request.form.get("password")
-            }
+            data = request.form.to_dict()
         
-        email = data.get("email") if data else None
-        password = data.get("password") if data else None
+        # Validar que hay datos
+        if not data:
+            return json_response({"ok": False, "msg": "No se recibieron datos"}, 400)
+        
+        email = data.get("email", "").strip()
+        password = data.get("password", "").strip()
 
-        # Validaciones
         if not email or not password:
             return json_response({"ok": False, "msg": "Correo y contraseña son requeridos"}, 400)
 
@@ -259,7 +258,6 @@ def register():
             
         except Exception as e:
             print(f"❌ Error en register: {str(e)}", file=sys.stderr)
-            traceback.print_exc(file=sys.stderr)
             return json_response({"ok": False, "msg": f"Error interno: {str(e)}"}, 500)
 
     return render_template("register.html")
