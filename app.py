@@ -5,7 +5,6 @@ import io
 import os
 import sys
 import traceback
-from functools import wraps
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "secret_key_for_render_production")
@@ -100,7 +99,7 @@ def init_db():
         cur.execute("INSERT INTO usuarios (email,password,rol,nombre,inventario_id) VALUES (?,?,?,?,?)",
                     ("repmotos@email.com","123456","usuario","Repuestos Motos",inv_repmotos_id))
         cur.execute("INSERT INTO usuarios (email,password,rol,nombre,inventario_id) VALUES (?,?,?,?,?)",
-                    ("test@email.com","123","usuario","Usuario Test",inv_principal_id))
+                    ("test@email.com","1234","usuario","Usuario Test",inv_principal_id))
 
         # Productos para repmotos
         productos = [
@@ -166,13 +165,9 @@ def repair_db():
 @app.route("/login", methods=["GET","POST"])
 def login():
     if request.method == "POST":
-        # Obtener datos según el tipo de contenido
-        if request.is_json:
-            data = request.get_json()
-        else:
-            data = request.form.to_dict()
+        # ✅ CORREGIDO: Funciona con JSON o FORM
+        data = request.get_json(silent=True) or request.form.to_dict()
         
-        # Validar que hay datos
         if not data:
             return json_response({"ok": False, "msg": "No se recibieron datos"}, 400)
         
@@ -204,6 +199,7 @@ def login():
                 
         except Exception as e:
             print(f"❌ Error en login: {str(e)}", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
             return json_response({"ok": False, "msg": f"Error interno: {str(e)}"}, 500)
 
     return render_template("login.html")
@@ -212,13 +208,9 @@ def login():
 @app.route("/register", methods=["GET","POST"])
 def register():
     if request.method == "POST":
-        # Obtener datos según el tipo de contenido
-        if request.is_json:
-            data = request.get_json()
-        else:
-            data = request.form.to_dict()
+        # ✅ CORREGIDO: Funciona con JSON o FORM
+        data = request.get_json(silent=True) or request.form.to_dict()
         
-        # Validar que hay datos
         if not data:
             return json_response({"ok": False, "msg": "No se recibieron datos"}, 400)
         
@@ -258,6 +250,7 @@ def register():
             
         except Exception as e:
             print(f"❌ Error en register: {str(e)}", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
             return json_response({"ok": False, "msg": f"Error interno: {str(e)}"}, 500)
 
     return render_template("register.html")
@@ -967,7 +960,7 @@ if __name__ == "__main__":
     print("🔐 CREDENCIALES:", file=sys.stderr)
     print("   admin@email.com / admin123", file=sys.stderr)
     print("   repmotos@email.com / 123456", file=sys.stderr)
-    print("   test@email.com / cualquier contraseña", file=sys.stderr)
+    print("   test@email.com / 123456", file=sys.stderr)
     print("="*50 + "\n", file=sys.stderr)
     
     port = int(os.environ.get("PORT", 5000))
