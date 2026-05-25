@@ -66,7 +66,7 @@ def init_db():
         cur.execute("INSERT INTO usuarios (email,password,rol,nombre,inventario_id) VALUES (?,?,?,?,?)",
                     ("repmotos@email.com","123456","usuario","Repuestos Motos",inv_repmotos_id))
         cur.execute("INSERT INTO usuarios (email,password,rol,nombre,inventario_id) VALUES (?,?,?,?,?)",
-                    ("test@email.com","","usuario","Usuario Test",inv_principal_id))
+                    ("test@email.com","","123","Usuario Test",inv_principal_id))
 
         # Productos para repmotos
         productos = [
@@ -136,6 +136,9 @@ def repair_db():
             print("📝 Agregando columna 'inventario_id' a ventas...", file=sys.stderr)
             cur.execute("ALTER TABLE ventas ADD COLUMN inventario_id INTEGER DEFAULT 0")
             print("✅ Columna 'inventario_id' agregada", file=sys.stderr)
+            # Actualizar ventas existentes con inventario_id
+            cur.execute("UPDATE ventas SET inventario_id = ? WHERE inventario_id = 0", (1,))
+            print("✅ Ventas existentes actualizadas", file=sys.stderr)
         
         conn.commit()
         conn.close()
@@ -143,6 +146,7 @@ def repair_db():
         return True
     except Exception as e:
         print(f"❌ Error reparando BD: {str(e)}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
         return False
 
 
@@ -160,6 +164,13 @@ def login():
             email = request.form.get("email")
             password = request.form.get("password")
 
+        # ✅ VALIDACIÓN BACKEND: Campos vacíos
+        if not email or not password:
+            if request.is_json:
+                return {"ok": False, "msg": "Correo y contraseña son requeridos"}
+            flash("❌ Correo y contraseña son requeridos")
+            return redirect("/login")
+
         conn = get_db()
         cur = conn.cursor()
 
@@ -171,6 +182,7 @@ def login():
             session["user_id"] = user["id"]
             session["rol"] = user["rol"]
             session["inventario_id"] = user["inventario_id"]
+            session["nombre"] = user["nombre"] if user["nombre"] else user["email"]
 
             return {"ok": True, "redirect": "/admin" if user["rol"] == "admin" else "/index"} \
                 if request.is_json else redirect("/admin" if user["rol"] == "admin" else "/index")
@@ -193,6 +205,25 @@ def register():
             email = request.form.get("email")
             password = request.form.get("password")
 
+        # ✅ VALIDACIONES BACKEND
+        if not email or not password:
+            if request.is_json:
+                return {"ok": False, "msg": "Correo y contraseña son requeridos"}
+            flash("❌ Correo y contraseña son requeridos")
+            return redirect("/register")
+
+        if '@' not in email or '.' not in email:
+            if request.is_json:
+                return {"ok": False, "msg": "Formato de correo inválido"}
+            flash("❌ Formato de correo inválido")
+            return redirect("/register")
+
+        if len(password) < 4:
+            if request.is_json:
+                return {"ok": False, "msg": "La contraseña debe tener al menos 4 caracteres"}
+            flash("❌ La contraseña debe tener al menos 4 caracteres")
+            return redirect("/register")
+
         conn = get_db()
         cur = conn.cursor()
 
@@ -212,7 +243,7 @@ def register():
         conn.commit()
         conn.close()
 
-        return {"ok": True}
+        return {"ok": True, "msg": "Usuario creado correctamente"}
 
     return render_template("register.html")
 
@@ -260,10 +291,15 @@ def index():
     for p in productos:
         total_valor += p["cantidad"] * p["precio"]
 
+    # Obtener nombre del usuario para mostrar
+    cur.execute("SELECT nombre, email FROM usuarios WHERE id=?", (session["user_id"],))
+    user = cur.fetchone()
+    nombre_usuario = user["nombre"] if user["nombre"] else user["email"]
+    
     conn.close()
 
     return render_template("index.html", productos=productos, categorias=categorias, 
-                         total_valor=total_valor, producto_buscado=None)
+                         total_valor=total_valor, producto_buscado=None, nombre=nombre_usuario)
 
 
 # ================= BUSCAR PRODUCTO =================
@@ -299,10 +335,15 @@ def buscar_producto():
     for p in productos:
         total_valor += p["cantidad"] * p["precio"]
 
+    # Obtener nombre del usuario
+    cur.execute("SELECT nombre, email FROM usuarios WHERE id=?", (session["user_id"],))
+    user = cur.fetchone()
+    nombre_usuario = user["nombre"] if user["nombre"] else user["email"]
+    
     conn.close()
 
     return render_template("index.html", productos=productos, categorias=categorias, 
-                         producto_buscado=producto, total_valor=total_valor)
+                         producto_buscado=producto, total_valor=total_valor, nombre=nombre_usuario)
 
 
 # ================= AGREGAR PRODUCTO =================
@@ -439,16 +480,22 @@ def vender(id):
 
     if not producto or cantidad > producto["cantidad"]:
         conn.close()
-        flash("❌ Error en venta")
+        flash("❌ Error en venta - Stock insuficiente")
         return redirect("/index")
 
-    cur.execute("UPDATE productos SET cantidad = cantidad - ? WHERE id=?", (cantidad,id))
-    cur.execute("INSERT INTO ventas (producto_id,cantidad) VALUES (?,?)", (id,cantidad))
+    # Actualizar stock
+    cur.execute("UPDATE productos SET cantidad = cantidad - ? WHERE id=?", (cantidad, id))
+    
+    # ✅ REGISTRAR VENTA CON TODOS LOS CAMPOS
+    cur.execute("""
+        INSERT INTO ventas (producto_id, producto, cantidad, precio, inventario_id, fecha) 
+        VALUES (?, ?, ?, ?, ?, datetime('now'))
+    """, (id, producto["nombre"], cantidad, producto["precio"], session["inventario_id"]))
 
     conn.commit()
     conn.close()
 
-    flash("✅ Venta realizada")
+    flash(f"✅ Venta realizada: {cantidad} x {producto['nombre']}")
     return redirect("/index")
     
 # ================= VENTAS =================
@@ -460,21 +507,26 @@ def ventas():
     conn = get_db()
     cur = conn.cursor()
 
+    # Productos para el formulario de venta
     cur.execute("SELECT * FROM productos WHERE inventario_id=?", (session["inventario_id"],))
     productos = cur.fetchall()
 
+    # ✅ CONSULTA CORREGIDA - ahora incluye todos los campos
     cur.execute("""
-        SELECT v.id, p.nombre as producto, v.cantidad
+        SELECT v.id, v.producto, v.cantidad, v.precio, v.fecha,
+               (v.cantidad * v.precio) as total
         FROM ventas v
-        JOIN productos p ON v.producto_id = p.id
-        WHERE p.inventario_id=?
+        WHERE v.inventario_id=?
         ORDER BY v.id DESC
     """, (session["inventario_id"],))
     ventas = cur.fetchall()
 
+    # Calcular total de ventas
+    total_ventas = sum(venta["total"] for venta in ventas) if ventas else 0
+
     conn.close()
 
-    return render_template("ventas.html", productos=productos, ventas=ventas)
+    return render_template("ventas.html", productos=productos, ventas=ventas, total_ventas=total_ventas)
 
 
 # ================= REGISTRAR VENTA =================
@@ -502,16 +554,22 @@ def venta():
 
     if not producto or cantidad > producto["cantidad"]:
         conn.close()
-        flash("❌ Error en venta")
+        flash("❌ Error en venta - Stock insuficiente")
         return redirect("/ventas")
 
+    # Actualizar stock
     cur.execute("UPDATE productos SET cantidad = cantidad - ? WHERE id=?", (cantidad, producto_id))
-    cur.execute("INSERT INTO ventas (producto_id, cantidad) VALUES (?, ?)", (producto_id, cantidad))
+    
+    # ✅ REGISTRAR VENTA CON TODOS LOS CAMPOS
+    cur.execute("""
+        INSERT INTO ventas (producto_id, producto, cantidad, precio, inventario_id, fecha) 
+        VALUES (?, ?, ?, ?, ?, datetime('now'))
+    """, (producto_id, producto["nombre"], cantidad, producto["precio"], session["inventario_id"]))
 
     conn.commit()
     conn.close()
 
-    flash("✅ Venta registrada")
+    flash(f"✅ Venta registrada: {cantidad} x {producto['nombre']}")
     return redirect("/ventas")
 
 # ================= DASHBOARD =================
@@ -523,28 +581,30 @@ def dashboard():
     conn = get_db()
     cur = conn.cursor()
 
+    # Total de productos
     cur.execute("SELECT COUNT(*) as total FROM productos WHERE inventario_id=?", (session["inventario_id"],))
     total_productos = cur.fetchone()["total"]
 
+    # Stock total
     cur.execute("SELECT SUM(cantidad) as stock FROM productos WHERE inventario_id=?", (session["inventario_id"],))
     stock_total = cur.fetchone()["stock"] or 0
 
+    # ✅ Ventas totales (usando la tabla ventas directamente)
     cur.execute("""
-    SELECT SUM(v.cantidad * p.precio) as ventas
-    FROM ventas v
-    JOIN productos p ON v.producto_id = p.id
-    WHERE p.inventario_id=?
+        SELECT SUM(cantidad * precio) as ventas
+        FROM ventas
+        WHERE inventario_id=?
     """, (session["inventario_id"],))
     ventas_total = cur.fetchone()["ventas"] or 0
 
+    # ✅ Top 5 productos más vendidos
     cur.execute("""
-    SELECT p.nombre, SUM(v.cantidad) as vendidos
-    FROM ventas v
-    JOIN productos p ON v.producto_id = p.id
-    WHERE p.inventario_id=?
-    GROUP BY p.id
-    ORDER BY vendidos DESC
-    LIMIT 5
+        SELECT producto, SUM(cantidad) as vendidos
+        FROM ventas
+        WHERE inventario_id=?
+        GROUP BY producto
+        ORDER BY vendidos DESC
+        LIMIT 5
     """, (session["inventario_id"],))
     top_productos = cur.fetchall()
 
