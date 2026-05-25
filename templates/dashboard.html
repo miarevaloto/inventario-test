@@ -55,6 +55,96 @@
   background: #dc3545;
   color: white;
 }
+
+/* ===== ESTILOS PARA ALERTA DE STOCK ===== */
+.stock-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.stock-table th {
+  padding: 10px;
+  text-align: left;
+  background-color: #f8f9fa;
+  border-bottom: 2px solid #dee2e6;
+}
+
+.stock-table td {
+  padding: 10px;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.stock-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.stock-agotado {
+  background-color: #dc3545;
+  color: white;
+}
+
+.stock-critico {
+  background-color: #fd7e14;
+  color: white;
+}
+
+.stock-bajo {
+  background-color: #ffc107;
+  color: #856404;
+}
+
+.stock-ok {
+  background-color: #28a745;
+  color: white;
+}
+
+.stock-number {
+  font-weight: bold;
+  font-size: 18px;
+}
+
+.stock-number-agotado {
+  color: #dc3545;
+}
+
+.stock-number-critico {
+  color: #fd7e14;
+}
+
+.stock-number-bajo {
+  color: #ffc107;
+}
+
+.alerta-success {
+  text-align: center;
+  padding: 20px;
+  background-color: #d4edda;
+  border-radius: 8px;
+}
+
+.alerta-success span {
+  font-size: 24px;
+}
+
+.alerta-success p {
+  margin: 5px 0 0 0;
+  color: #155724;
+}
+
+.alerta-warning {
+  margin-top: 15px;
+  padding: 10px;
+  background-color: #fff3cd;
+  border-radius: 8px;
+}
+
+.alerta-warning small {
+  color: #856404;
+}
 </style>
 
 </head>
@@ -101,6 +191,64 @@
 
     </div>
 
+    <!-- ================= NUEVO: ALERTA DE BAJO STOCK ================= -->
+    <div class="card">
+        <h2>⚠️ Productos con stock bajo</h2>
+        
+        {% if productos_bajo_stock %}
+            <div style="overflow-x: auto;">
+                <table class="stock-table">
+                    <thead>
+                        <tr>
+                            <th>Producto</th>
+                            <th style="text-align: center;">Stock</th>
+                            <th style="text-align: center;">Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for p in productos_bajo_stock %}
+                            <tr>
+                                <td>
+                                    <strong>{{ p.nombre }}</strong>
+                                </td>
+                                <td style="text-align: center;">
+                                    <span class="stock-number 
+                                        {% if p.cantidad == 0 %}stock-number-agotado
+                                        {% elif p.cantidad < 3 %}stock-number-critico
+                                        {% else %}stock-number-bajo{% endif %}">
+                                        {{ p.cantidad }}
+                                    </span>
+                                </td>
+                                <td style="text-align: center;">
+                                    {% if p.cantidad == 0 %}
+                                        <span class="stock-badge stock-agotado">
+                                            ❌ AGOTADO
+                                        </span>
+                                    {% elif p.cantidad < 3 %}
+                                        <span class="stock-badge stock-critico">
+                                            ⚠️ CRÍTICO
+                                        </span>
+                                    {% else %}
+                                        <span class="stock-badge stock-bajo">
+                                            ⚠️ BAJO
+                                        </span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="alerta-warning">
+                <small>⚠️ Se recomienda reabastecer estos productos lo antes posible.</small>
+            </div>
+        {% else %}
+            <div class="alerta-success">
+                <span>✅</span>
+                <p>¡Todos los productos tienen stock suficiente! (más de 5 unidades)</p>
+            </div>
+        {% endif %}
+    </div>
 
     <!-- GRÁFICA -->
     <div class="card">
@@ -133,7 +281,7 @@
     </div>
 
 
-    <!-- BOTÓN PDF (MODIFICADO) -->
+    <!-- BOTÓN PDF -->
     <div style="text-align:center; margin:20px;">
         <button onclick="abrirModalPDF()" class="btn btn-success">
             📄 Descargar PDF
@@ -168,7 +316,9 @@ new Chart(ctx, {
         datasets: [{
             label: 'Ventas',
             data: [{% for p in top_productos %}{{p['vendidos']}},{% endfor %}],
-            borderWidth: 1
+            borderWidth: 1,
+            backgroundColor: 'rgba(54, 162, 235, 0.5)',
+            borderColor: 'rgba(54, 162, 235, 1)'
         }]
     },
     options: {
@@ -176,6 +326,14 @@ new Chart(ctx, {
         plugins: {
             legend: {
                 display: false
+            }
+        },
+        scales: {
+            y: {
+                beginAtZero: true,
+                ticks: {
+                    stepSize: 1
+                }
             }
         }
     }
