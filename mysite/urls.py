@@ -8,5 +8,6 @@ urlpatterns = [
     path('', include('inventario_app.urls')),
 ]
 
-# ✅ Servir archivos estáticos
+# ✅ FORZAR SERVIR ARCHIVOS ESTÁTICOS (SIEMPRE)
 urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
