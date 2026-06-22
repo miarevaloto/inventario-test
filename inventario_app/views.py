@@ -485,8 +485,14 @@ def crear_admin_sin_login(request):
 
 # ================= CREAR TODAS LAS TIENDAS =================
 def crear_todo(request):
-    """Crea TODAS las tiendas con productos y ventas aleatorias"""
+    """Crea TODAS las tiendas con productos y ventas aleatorias (sin duplicados)"""
     try:
+        from django.contrib.auth.models import User
+        from .models import Inventario, Producto, Venta, UsuarioInventario
+        import random
+        from datetime import timedelta
+        from django.utils import timezone
+        
         resultado = []
         resultado.append("🚀 CREANDO TODAS LAS TIENDAS")
         resultado.append("="*60)
@@ -517,29 +523,13 @@ def crear_todo(request):
             {"nombre": "Pastillas de freno", "categoria": "Frenos", "precio_base": 20000},
         ]
         
-        # ========== CREAR ADMIN ==========
-        if not User.objects.filter(username='admin@email.com').exists():
-            User.objects.create_superuser('admin@email.com', 'admin@email.com', 'admin123')
-            resultado.append("✅ Admin creado")
-        
-        # ========== CREAR TEST ==========
-        if not User.objects.filter(username='test@email.com').exists():
-            user_test = User.objects.create_user('test@email.com', 'test@email.com', '1234')
-            resultado.append("✅ Test creado")
-        else:
-            user_test = User.objects.get(username='test@email.com')
-        
-        # Inventario Test
-        inv_test, _ = Inventario.objects.get_or_create(nombre='Test')
-        if not UsuarioInventario.objects.filter(usuario=user_test).exists():
-            UsuarioInventario.objects.create(usuario=user_test, inventario=inv_test)
-        
         # ========== CREAR CADA TIENDA ==========
         for tienda in tiendas:
             resultado.append(f"\n🏪 {tienda['nombre']}")
             
-            # Crear usuario
-            if not User.objects.filter(username=tienda['email']).exists():
+            # Verificar si el usuario ya existe
+            user = User.objects.filter(username=tienda['email']).first()
+            if not user:
                 user = User.objects.create_user(
                     username=tienda['email'],
                     email=tienda['email'],
@@ -547,74 +537,104 @@ def crear_todo(request):
                 )
                 resultado.append(f"   👤 {tienda['email']} / {tienda['password']}")
             else:
-                user = User.objects.get(username=tienda['email'])
+                resultado.append(f"   👤 {tienda['email']} (ya existe)")
             
-            # Crear inventario
-            inv = Inventario.objects.create(nombre=tienda['nombre'])
-            UsuarioInventario.objects.create(usuario=user, inventario=inv)
+            # Verificar si el inventario ya existe
+            inv = Inventario.objects.filter(nombre=tienda['nombre']).first()
+            if not inv:
+                inv = Inventario.objects.create(nombre=tienda['nombre'])
+                resultado.append(f"   📦 Inventario {tienda['nombre']} creado")
+            else:
+                resultado.append(f"   📦 Inventario {tienda['nombre']} ya existe")
             
-            # ========== CREAR PRODUCTOS ==========
+            # Verificar relación usuario-inventario (evitar duplicados)
+            if not UsuarioInventario.objects.filter(usuario=user).exists():
+                UsuarioInventario.objects.create(usuario=user, inventario=inv)
+                resultado.append(f"   🔗 Relación usuario-inventario creada")
+            else:
+                resultado.append(f"   🔗 Relación usuario-inventario ya existe")
+            
+            # ========== CREAR PRODUCTOS (solo si no existen) ==========
             productos_tienda = []
-            for i in range(min(tienda['num_productos'], len(productos_base))):
-                prod_base = productos_base[i]
-                variacion = random.uniform(0.95, 1.05)
-                precio = round(prod_base['precio_base'] * tienda['factor_precio'] * variacion, 2)
-                stock_variacion = random.randint(-30, 30)
-                stock = max(0, tienda['stock_base'] + stock_variacion)
+            productos_existentes = Producto.objects.filter(inventario=inv).count()
+            
+            if productos_existentes == 0:
+                for i in range(min(tienda['num_productos'], len(productos_base))):
+                    prod_base = productos_base[i]
+                    variacion = random.uniform(0.95, 1.05)
+                    precio = round(prod_base['precio_base'] * tienda['factor_precio'] * variacion, 2)
+                    stock_variacion = random.randint(-30, 30)
+                    stock = max(0, tienda['stock_base'] + stock_variacion)
+                    
+                    producto = Producto.objects.create(
+                        nombre=prod_base['nombre'],
+                        categoria=prod_base['categoria'],
+                        cantidad=stock,
+                        precio=precio,
+                        inventario=inv
+                    )
+                    productos_tienda.append({
+                        "id": producto.id,
+                        "nombre": prod_base['nombre'],
+                        "precio": precio,
+                        "stock_inicial": stock
+                    })
                 
-                producto = Producto.objects.create(
-                    nombre=prod_base['nombre'],
-                    categoria=prod_base['categoria'],
-                    cantidad=stock,
-                    precio=precio,
-                    inventario=inv
-                )
-                productos_tienda.append({
-                    "id": producto.id,
-                    "nombre": prod_base['nombre'],
-                    "precio": precio
-                })
+                resultado.append(f"   📦 {len(productos_tienda)} productos creados")
+            else:
+                # Si ya hay productos, solo listarlos
+                for p in Producto.objects.filter(inventario=inv):
+                    productos_tienda.append({
+                        "id": p.id,
+                        "nombre": p.nombre,
+                        "precio": p.precio,
+                        "stock_inicial": p.cantidad
+                    })
+                resultado.append(f"   📦 {productos_existentes} productos ya existentes")
             
-            resultado.append(f"   📦 {len(productos_tienda)} productos creados")
+            # ========== GENERAR VENTAS (solo si no hay) ==========
+            ventas_existentes = Venta.objects.filter(inventario=inv).count()
             
-            # ========== GENERAR VENTAS ==========
-            fechas = []
-            for i in range(tienda['dias_historial']):
-                fecha = timezone.now() - timedelta(days=i)
-                fechas.append(fecha.strftime("%Y-%m-%d %H:%M:%S"))
-            
-            ventas_creadas = 0
-            for dia in range(tienda['dias_historial']):
-                num_ventas_dia = max(1, int(tienda['ventas_por_dia'] * random.uniform(0.5, 1.5)))
-                for _ in range(num_ventas_dia):
-                    if productos_tienda:
-                        producto = random.choice(productos_tienda[:15])
-                        if producto['precio'] < 20000:
-                            cantidad = random.randint(2, 8)
-                        elif producto['precio'] < 100000:
-                            cantidad = random.randint(1, 4)
-                        else:
-                            cantidad = random.randint(1, 2)
-                        
-                        descuento = random.uniform(0, 0.15)
-                        precio_venta = round(producto['precio'] * (1 - descuento), 2)
-                        fecha_venta = fechas[dia]
-                        
-                        Venta.objects.create(
-                            producto=producto['nombre'],
-                            cantidad=cantidad,
-                            precio=precio_venta,
-                            inventario=inv,
-                            fecha=fecha_venta
-                        )
-                        ventas_creadas += 1
-                        
-                        # Actualizar stock
-                        prod = Producto.objects.get(id=producto['id'])
-                        prod.cantidad = max(0, prod.cantidad - cantidad)
-                        prod.save()
-            
-            resultado.append(f"   💰 {ventas_creadas} ventas generadas")
+            if ventas_existentes == 0 and productos_tienda:
+                fechas = []
+                for i in range(tienda['dias_historial']):
+                    fecha = timezone.now() - timedelta(days=i)
+                    fechas.append(fecha.strftime("%Y-%m-%d %H:%M:%S"))
+                
+                ventas_creadas = 0
+                for dia in range(tienda['dias_historial']):
+                    num_ventas_dia = max(1, int(tienda['ventas_por_dia'] * random.uniform(0.5, 1.5)))
+                    for _ in range(num_ventas_dia):
+                        if productos_tienda:
+                            producto = random.choice(productos_tienda[:15])
+                            if producto['precio'] < 20000:
+                                cantidad = random.randint(2, 8)
+                            elif producto['precio'] < 100000:
+                                cantidad = random.randint(1, 4)
+                            else:
+                                cantidad = random.randint(1, 2)
+                            
+                            descuento = random.uniform(0, 0.15)
+                            precio_venta = round(producto['precio'] * (1 - descuento), 2)
+                            fecha_venta = fechas[dia]
+                            
+                            Venta.objects.create(
+                                producto=producto['nombre'],
+                                cantidad=cantidad,
+                                precio=precio_venta,
+                                inventario=inv,
+                                fecha=fecha_venta
+                            )
+                            ventas_creadas += 1
+                            
+                            # Actualizar stock
+                            prod = Producto.objects.get(id=producto['id'])
+                            prod.cantidad = max(0, prod.cantidad - cantidad)
+                            prod.save()
+                
+                resultado.append(f"   💰 {ventas_creadas} ventas generadas")
+            else:
+                resultado.append(f"   💰 {ventas_existentes} ventas ya existentes")
         
         # ========== RESUMEN FINAL ==========
         resultado.append("\n" + "="*60)
@@ -637,7 +657,6 @@ def crear_todo(request):
         
     except Exception as e:
         return HttpResponse(f"❌ Error: {str(e)}<br><br><a href='/login/'>Volver</a>")
-
 # ================= LIMPIAR BASE DE DATOS =================
 def limpiar_todo(request):
     """Limpia toda la base de datos"""
