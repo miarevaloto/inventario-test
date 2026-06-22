@@ -1,21 +1,21 @@
 #!/bin/bash
 
-echo "🚀 Iniciando Django en Render con MySQL..."
+echo "🚀 Iniciando Django en Render..."
 
 # Instalar dependencias
 echo "📦 Instalando dependencias..."
 pip install -r requirements.txt
 
-# Recolectar archivos estáticos
+# ✅ RECOLECTAR ARCHIVOS ESTÁTICOS (FORZADO)
 echo "📁 Recolectando archivos estáticos..."
-python manage.py collectstatic --noinput --clear || true
+python manage.py collectstatic --noinput --clear
 
-# Ejecutar migraciones
+# ✅ Ejecutar migraciones
 echo "🔄 Ejecutando migraciones..."
 python manage.py makemigrations || true
 python manage.py migrate || true
 
-# Inicializar datos
+# ✅ Inicializar datos
 echo "📊 Inicializando datos..."
 python manage.py init_db || true
 
