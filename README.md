@@ -118,6 +118,9 @@ Este proyecto fue desarrollado como **trabajo de grado** para la carrera de **In
 
 ---
 
+
+---
+
 ## 📋 Requisitos Previos
 
 ### **Desarrollo Local**
@@ -126,8 +129,9 @@ Este proyecto fue desarrollado como **trabajo de grado** para la carrera de **In
 - Git
 - (Opcional) MySQL Workbench para gestionar la BD
 
-### **Producción (Render)**
+### **Producción (Render + Aiven)**
 - Cuenta en [Render.com](https://render.com)
+- Cuenta en [Aiven.io](https://aiven.io) (gratis)
 - Cuenta en [GitHub](https://github.com)
 
 ---
