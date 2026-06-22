@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin</title>
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'style.css' %}">
+    <style>
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; }
+        .modal-content { background: #fff; padding: 20px; border-radius: 8px; width: 400px; max-width: 90%; }
+        .close { float: right; font-size: 20px; cursor: pointer; }
+        .btn-xs { padding: 4px 8px; font-size: 12px; cursor: pointer; border: none; border-radius: 4px; }
+        .btn-primary { background: #007bff; color: white; }
+        .btn-danger { background: #dc3545; color: white; }
+        .btn-success { background: #28a745; color: white; }
+        .btn-secondary { background: #6c757d; color: white; }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <h2>⚙️ Panel Admin</h2>
+        <div>
+            <a href="{% url 'index' %}">📦 Inventario</a>
+            <a href="{% url 'dashboard' %}">📊 Dashboard</a>
+            <a href="{% url 'logout' %}" class="btn btn-danger">🚪 Salir</a>
+        </div>
+    </div>
+
+    <div class="container">
+        {% if messages %}
+            <div class="card">
+                {% for msg in messages %}
+                    <p style="color: {% if '✅' in msg %}green{% else %}red{% endif %};">
+                        {{ msg }}
+                    </p>
+                {% endfor %}
+            </div>
+        {% endif %}
+
+        <!-- Usuarios -->
+        <div class="card">
+            <h2>👥 Usuarios</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Email</th>
+                        <th>Superusuario</th>
+                        <th>Eliminar</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for u in usuarios %}
+                    <tr>
+                        <td>{{ u.id }}</td>
+                        <td>{{ u.email }}</td>
+                        <td>{% if u.is_superuser %}✅ Admin{% else %}👤 Usuario{% endif %}</td>
+                        <td>
+                            <a href="{% url 'eliminar_usuario' u.id %}" 
+                               onclick="return confirm('¿Seguro que deseas eliminar este usuario?')">
+                               <button class="btn-danger btn-xs">Eliminar</button>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Crear Usuario -->
+        <div class="card">
+            <h2>➕ Crear Usuario</h2>
+            <form method="POST" action="{% url 'crear_usuario_admin' %}">
+                {% csrf_token %}
+                <input type="email" name="email" placeholder="Correo" required>
+                <input type="password" name="password" placeholder="Contraseña" required>
+                <select name="rol">
+                    <option value="usuario">Usuario</option>
+                    <option value="admin">Admin</option>
+                </select>
+                <button class="btn btn-primary">Crear Usuario</button>
+            </form>
+        </div>
+
+        <!-- Inventarios -->
+        <div class="card">
+            <h2>📦 Inventarios</h2>
+            <table>
+                <thead><tr><th>ID</th><th>Nombre</th></tr></thead>
+                <tbody>
+                    {% for inv in inventarios %}
+                    <tr><td>{{ inv.id }}</td><td>{{ inv.nombre }}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Crear Inventario -->
+        <div class="card">
+            <h2>➕ Crear Inventario</h2>
+            <form method="POST" action="{% url 'crear_inventario' %}">
+                {% csrf_token %}
+                <input type="text" name="nombre" placeholder="Nombre del inventario" required>
+                <button class="btn btn-success">Crear Inventario</button>
+            </form>
+        </div>
+    </div>
+</body>
+</html>

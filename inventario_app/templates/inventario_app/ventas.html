@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Ventas</title>
+    {% load static %}
+    {% load humanize %}
+    <link rel="stylesheet" href="{% static 'style.css' %}">
+    <style>
+        .total-ventas {
+            font-size: 24px;
+            font-weight: bold;
+            color: #28a745;
+            text-align: right;
+            margin-top: 20px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        .alert-error { 
+            color: #721c24; 
+            background-color: #f8d7da; 
+            padding: 10px; 
+            border-radius: 4px; 
+            margin-bottom: 10px;
+        }
+        .alert-success { 
+            color: #155724; 
+            background-color: #d4edda; 
+            padding: 10px; 
+            border-radius: 4px; 
+            margin-bottom: 10px;
+        }
+        .productos-count {
+            color: #6c757d; 
+            font-size: 14px; 
+            margin-bottom: 10px;
+        }
+        .select-producto {
+            width: 100%;
+            padding: 10px;
+            font-size: 16px;
+            border: 2px solid #007bff;
+            border-radius: 6px;
+            background: white;
+            margin-bottom: 10px;
+        }
+        .select-producto option {
+            padding: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <h2>💰 Ventas</h2>
+        <div>
+            <a href="{% url 'index' %}">📦 Inventario</a>
+            <a href="{% url 'dashboard' %}">📊 Dashboard</a>
+            <a href="{% url 'logout' %}" class="btn btn-danger">🚪 Salir</a>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Mensajes -->
+        {% if messages %}
+            {% for msg in messages %}
+                <div class="{% if '✅' in msg %}alert-success{% else %}alert-error{% endif %}">
+                    {{ msg }}
+                </div>
+            {% endfor %}
+        {% endif %}
+
+        <!-- FORMULARIO DE REGISTRO DE VENTA -->
+        <div class="card">
+            <h2>💰 Registrar Venta</h2>
+            
+            <!-- Mostrar cantidad de productos disponibles -->
+            <div class="productos-count">
+                📦 Productos disponibles en tu inventario: <strong>{{ productos|length }}</strong>
+            </div>
+
+            <form method="POST" action="{% url 'registrar_venta' %}">
+                {% csrf_token %}
+                
+                <label for="producto_id" style="font-weight: bold; display: block; margin-bottom: 5px;">
+                    Seleccione un producto:
+                </label>
+                <select name="producto_id" id="producto_id" class="select-producto" required>
+                    <option value="">-- Seleccione un producto --</option>
+                    {% for p in productos %}
+                        <option value="{{ p.id }}">
+                            {{ p.nombre }} - Stock: {{ p.cantidad|intcomma }} - ${{ p.precio|intcomma }}
+                        </option>
+                    {% empty %}
+                        <option value="">❌ No hay productos disponibles</option>
+                    {% endfor %}
+                </select>
+
+                <label for="cantidad" style="font-weight: bold; display: block; margin-bottom: 5px;">
+                    Cantidad:
+                </label>
+                <input name="cantidad" id="cantidad" type="number" placeholder="Ej: 1, 2, 3..." required min="1" 
+                       style="width: 100%; padding: 10px; font-size: 16px; border: 2px solid #28a745; border-radius: 6px; margin-bottom: 10px;">
+
+                <button class="btn btn-primary" type="submit" style="width: 100%; padding: 12px; font-size: 18px;">
+                    💰 Vender
+                </button>
+            </form>
+        </div>
+
+        <!-- HISTORIAL DE VENTAS -->
+        <div class="card">
+            <h2>📋 Historial de Ventas</h2>
+            
+            {% if ventas %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Producto</th>
+                            <th>Cantidad</th>
+                            <th>Precio Unit.</th>
+                            <th>Total</th>
+                            <th>Fecha</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for v in ventas %}
+                        <tr>
+                            <td>{{ v.id }}</td>
+                            <td>{{ v.producto }}</td>
+                            <td>{{ v.cantidad|intcomma }}</td>
+                            <td>${{ v.precio|intcomma }}</td>
+                            <td>${{ v.total|intcomma }}</td>
+                            <td>{{ v.fecha|date:"d/m/Y H:i" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <div class="total-ventas">
+                    💰 TOTAL VENTAS: ${{ total_ventas|intcomma }}
+                </div>
+            {% else %}
+                <p style="text-align: center; color: #6c757d; padding: 20px;">
+                    No hay ventas registradas aún.
+                </p>
+            {% endif %}
+        </div>
+    </div>
+
+    <script>
+        // Validar que se haya seleccionado un producto antes de enviar
+        document.querySelector('form').addEventListener('submit', function(e) {
+            const select = document.getElementById('producto_id');
+            const cantidad = document.getElementById('cantidad');
+            
+            if (!select.value) {
+                e.preventDefault();
+                alert('❌ Por favor seleccione un producto');
+                select.focus();
+                return false;
+            }
+            
+            if (!cantidad.value || parseInt(cantidad.value) < 1) {
+                e.preventDefault();
+                alert('❌ Por favor ingrese una cantidad válida (mínimo 1)');
+                cantidad.focus();
+                return false;
+            }
+        });
+    </script>
+</body>
+</html>

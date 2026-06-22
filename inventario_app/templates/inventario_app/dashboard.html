@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Dashboard</title>
+    {% load static %}
+    {% load humanize %}
+    <link rel="stylesheet" href="{% static 'style.css' %}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-contenido {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            text-align: center;
+            width: 320px;
+        }
+        .modal-botones { margin-top: 20px; }
+        .modal-botones button { margin: 5px; padding: 8px 15px; cursor: pointer; border: none; border-radius: 6px; }
+        .btn-confirmar { background: #28a745; color: white; }
+        .btn-cancelar { background: #dc3545; color: white; }
+        .btn-success { background: #28a745; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; text-decoration: none; display: inline-block; }
+        
+        .stock-table { width: 100%; border-collapse: collapse; }
+        .stock-table th { padding: 10px; text-align: left; background: #f8f9fa; border-bottom: 2px solid #dee2e6; }
+        .stock-table td { padding: 10px; border-bottom: 1px solid #dee2e6; }
+        .stock-badge { display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; }
+        .stock-agotado { background: #dc3545; color: white; }
+        .stock-critico { background: #fd7e14; color: white; }
+        .stock-bajo { background: #ffc107; color: #856404; }
+        .stock-number { font-weight: bold; font-size: 18px; }
+        .stock-number-agotado { color: #dc3545; }
+        .stock-number-critico { color: #fd7e14; }
+        .alerta-success { text-align: center; padding: 20px; background: #d4edda; border-radius: 8px; }
+        .alerta-success span { font-size: 24px; }
+        .alerta-success p { margin: 5px 0 0 0; color: #155724; }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <h2>📊 Dashboard</h2>
+        <div>
+            <a href="{% url 'index' %}">📦 Inventario</a>
+            {% if user.is_superuser %}
+                <a href="{% url 'admin_panel' %}">⚙️ Admin</a>
+            {% endif %}
+            <a href="{% url 'ventas' %}">💰 Ventas</a>
+            <a href="{% url 'logout' %}" class="btn btn-danger">🚪 Salir</a>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- KPI -->
+        <div class="dashboard">
+            <div class="card-metric">
+                <h3>Total Productos</h3>
+                <p>{{ total_productos|intcomma }}</p>
+            </div>
+            <div class="card-metric">
+                <h3>Stock Disponible</h3>
+                <p>{{ stock_total|intcomma }}</p>
+            </div>
+            <div class="card-metric">
+                <h3>Ventas Totales</h3>
+                <h3>$ {{ ventas_total|intcomma }}</h3>
+            </div>
+        </div>
+
+        <!-- Stock Bajo -->
+        <div class="card">
+            <h2>⚠️ Productos con stock bajo</h2>
+            {% if productos_bajo_stock %}
+                <table class="stock-table">
+                    <thead><tr><th>Producto</th><th style="text-align:center;">Stock</th><th style="text-align:center;">Estado</th></tr></thead>
+                    <tbody>
+                        {% for p in productos_bajo_stock %}
+                        <tr>
+                            <td><strong>{{ p.nombre }}</strong></td>
+                            <td style="text-align:center;">
+                                <span class="stock-number 
+                                    {% if p.cantidad == 0 %}stock-number-agotado
+                                    {% elif p.cantidad < 3 %}stock-number-critico
+                                    {% else %}stock-number-bajo{% endif %}">
+                                    {{ p.cantidad|intcomma }}
+                                </span>
+                            </td>
+                            <td style="text-align:center;">
+                                {% if p.cantidad == 0 %}
+                                    <span class="stock-badge stock-agotado">❌ AGOTADO</span>
+                                {% elif p.cantidad < 3 %}
+                                    <span class="stock-badge stock-critico">⚠️ CRÍTICO</span>
+                                {% else %}
+                                    <span class="stock-badge stock-bajo">⚠️ BAJO</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <div style="margin-top:15px; padding:10px; background:#fff3cd; border-radius:8px;">
+                    <small>⚠️ Se recomienda reabastecer estos productos lo antes posible.</small>
+                </div>
+            {% else %}
+                <div class="alerta-success">
+                    <span>✅</span>
+                    <p>¡Todos los productos tienen stock suficiente! (más de 5 unidades)</p>
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- Gráfica -->
+        <div class="card">
+            <h2>📈 Productos más vendidos</h2>
+            <canvas id="grafica"></canvas>
+        </div>
+
+        <!-- Top Productos -->
+        <div class="card">
+            <h2>🏆 Top Productos</h2>
+            <table>
+                <thead><tr><th>Producto</th><th>Ventas</th></tr></thead>
+                <tbody>
+                    {% for p in top_productos %}
+                    <tr><td>{{ p.producto }}</td><td>{{ p.vendidos|intcomma }}</td></tr>
+                    {% empty %}
+                    <tr><td colspan="2">No hay ventas registradas</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Botón PDF -->
+        <div style="text-align:center; margin:20px;">
+            <a href="{% url 'reporte_pdf' %}" class="btn-success">📄 Descargar PDF</a>
+        </div>
+    </div>
+
+    <!-- Modal -->
+    <div id="modalPDF" class="modal">
+        <div class="modal-contenido">
+            <h3>📄 Generar reporte PDF</h3>
+            <p>¿Deseas descargar el inventario actual?</p>
+            <div class="modal-botones">
+                <button class="btn-confirmar" onclick="generarPDF()">✅ Confirmar</button>
+                <button class="btn-cancelar" onclick="cerrarModalPDF()">❌ Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const ctx = document.getElementById('grafica');
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: [{% for p in top_productos %}"{{ p.producto }}",{% endfor %}],
+                datasets: [{
+                    label: 'Ventas',
+                    data: [{% for p in top_productos %}{{ p.vendidos }},{% endfor %}],
+                    borderWidth: 1,
+                    backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                    borderColor: 'rgba(54, 162, 235, 1)'
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+            }
+        });
+
+        function abrirModalPDF() { document.getElementById("modalPDF").style.display = "flex"; }
+        function cerrarModalPDF() { document.getElementById("modalPDF").style.display = "none"; }
+        function generarPDF() { window.location.href = "{% url 'reporte_pdf' %}"; cerrarModalPDF(); }
+    </script>
+</body>
+</html>
