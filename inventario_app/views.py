@@ -444,53 +444,46 @@ def crear_inventario(request):
     
     return redirect('admin_panel')
 
-# ================= CREAR ADMIN SIN LOGIN =================
+# ================= CREAR ADMIN Y TEST =================
 def crear_admin_sin_login(request):
-    """Crea admin y test sin necesidad de login (solo para primera configuración)"""
+    """Crea admin y test sin necesidad de login"""
     try:
         resultado = []
         
+        # Eliminar admin y test existentes
+        User.objects.filter(username='admin@email.com').delete()
+        User.objects.filter(username='test@email.com').delete()
+        
         # Crear admin
-        if not User.objects.filter(username='admin@email.com').exists():
-            User.objects.create_superuser('admin@email.com', 'admin@email.com', 'admin123')
-            resultado.append("✅ Admin creado: admin@email.com / admin123")
-        else:
-            resultado.append("✅ Admin ya existe")
+        User.objects.create_superuser('admin@email.com', 'admin@email.com', 'admin123')
+        resultado.append("✅ Admin creado: admin@email.com / admin123")
         
         # Crear test
-        if not User.objects.filter(username='test@email.com').exists():
-            User.objects.create_user('test@email.com', 'test@email.com', '1234')
-            resultado.append("✅ Test creado: test@email.com / 1234")
-        else:
-            resultado.append("✅ Test ya existe")
+        User.objects.create_user('test@email.com', 'test@email.com', '1234')
+        resultado.append("✅ Test creado: test@email.com / 1234")
         
-        # Verificar inventario Test
-        try:
-            inv_test = Inventario.objects.get(nombre='Test')
-            resultado.append("✅ Inventario Test encontrado")
-        except Inventario.DoesNotExist:
-            inv_test = Inventario.objects.create(nombre='Test')
-            resultado.append("✅ Inventario Test creado")
+        # Crear inventario Test
+        inv_test, _ = Inventario.objects.get_or_create(nombre='Test')
+        resultado.append("✅ Inventario Test creado")
         
-        # Verificar relación test-inventario
-        user = User.objects.get(username='test@email.com')
-        if not UsuarioInventario.objects.filter(usuario=user).exists():
-            UsuarioInventario.objects.create(usuario=user, inventario=inv_test)
+        # Asignar test a su inventario
+        user_test = User.objects.get(username='test@email.com')
+        if not UsuarioInventario.objects.filter(usuario=user_test).exists():
+            UsuarioInventario.objects.create(usuario=user_test, inventario=inv_test)
             resultado.append("✅ Relación test-inventario creada")
         
-        html = "<h1>🚀 Usuarios creados exitosamente</h1>"
+        html = "<h1>🚀 Admin y test creados</h1>"
         html += "<div style='font-family: monospace; background: #f0f0f0; padding: 20px; border-radius: 10px;'>"
         for line in resultado:
             html += f"<p>{line}</p>"
         html += "</div>"
-        html += "<br><a href='/login' style='padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px;'>Ir al Login</a>"
+        html += "<br><a href='/login/' style='padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px;'>Ir al login</a>"
         
         return HttpResponse(html)
-        
     except Exception as e:
-        return HttpResponse(f"❌ Error: {str(e)}<br><br><a href='/login'>Volver</a>")
+        return HttpResponse(f"❌ Error: {str(e)}")
 
-# ================= CREAR TIENDAS Y DATOS COMPLETOS =================
+# ================= CREAR TODAS LAS TIENDAS =================
 def crear_todo(request):
     """Crea TODAS las tiendas con productos y ventas aleatorias"""
     try:
@@ -498,7 +491,7 @@ def crear_todo(request):
         resultado.append("🚀 CREANDO TODAS LAS TIENDAS")
         resultado.append("="*60)
         
-        # ========== 1. DEFINIR LAS 4 TIENDAS ==========
+        # ========== DEFINIR LAS 4 TIENDAS ==========
         tiendas = [
             {"nombre": "Repmotos", "email": "repmotos@email.com", "password": "123456", 
              "factor_precio": 1.0, "stock_base": 100, "num_productos": 20, "ventas_por_dia": 3, "dias_historial": 45},
@@ -510,7 +503,7 @@ def crear_todo(request):
              "factor_precio": 0.90, "stock_base": 200, "num_productos": 25, "ventas_por_dia": 4, "dias_historial": 50}
         ]
         
-        # ========== 2. CATÁLOGO DE PRODUCTOS ==========
+        # ========== CATÁLOGO DE PRODUCTOS ==========
         productos_base = [
             {"nombre": "Aceite 4T", "categoria": "Lubricantes", "precio_base": 25000},
             {"nombre": "Filtro de aire", "categoria": "Repuestos", "precio_base": 15000},
@@ -522,40 +515,26 @@ def crear_todo(request):
             {"nombre": "Llanta delantera", "categoria": "Llantas", "precio_base": 90000},
             {"nombre": "Llanta trasera", "categoria": "Llantas", "precio_base": 110000},
             {"nombre": "Pastillas de freno", "categoria": "Frenos", "precio_base": 20000},
-            {"nombre": "Manillar", "categoria": "Repuestos", "precio_base": 45000},
-            {"nombre": "Espejos retrovisores", "categoria": "Accesorios", "precio_base": 12000},
-            {"nombre": "Batería moto", "categoria": "Eléctricos", "precio_base": 85000},
-            {"nombre": "Luces LED", "categoria": "Accesorios", "precio_base": 25000},
-            {"nombre": "Disco de freno", "categoria": "Frenos", "precio_base": 35000},
-            {"nombre": "Bomba de freno", "categoria": "Frenos", "precio_base": 55000},
-            {"nombre": "Cable de acelerador", "categoria": "Repuestos", "precio_base": 18000},
-            {"nombre": "Regulador de voltaje", "categoria": "Eléctricos", "precio_base": 42000},
-            {"nombre": "Bobina de encendido", "categoria": "Eléctricos", "precio_base": 38000},
-            {"nombre": "Carburador", "categoria": "Motor", "precio_base": 95000},
         ]
         
-        # ========== 3. CREAR ADMIN ==========
+        # ========== CREAR ADMIN ==========
         if not User.objects.filter(username='admin@email.com').exists():
             User.objects.create_superuser('admin@email.com', 'admin@email.com', 'admin123')
-            resultado.append("✅ Admin: admin@email.com / admin123")
-        else:
-            resultado.append("✅ Admin ya existe")
+            resultado.append("✅ Admin creado")
         
-        # ========== 4. CREAR TEST ==========
+        # ========== CREAR TEST ==========
         if not User.objects.filter(username='test@email.com').exists():
             user_test = User.objects.create_user('test@email.com', 'test@email.com', '1234')
-            resultado.append("✅ Test: test@email.com / 1234")
+            resultado.append("✅ Test creado")
         else:
             user_test = User.objects.get(username='test@email.com')
-            resultado.append("✅ Test ya existe")
         
         # Inventario Test
         inv_test, _ = Inventario.objects.get_or_create(nombre='Test')
         if not UsuarioInventario.objects.filter(usuario=user_test).exists():
             UsuarioInventario.objects.create(usuario=user_test, inventario=inv_test)
-            resultado.append("✅ Relación test-inventario creada")
         
-        # ========== 5. CREAR CADA TIENDA ==========
+        # ========== CREAR CADA TIENDA ==========
         for tienda in tiendas:
             resultado.append(f"\n🏪 {tienda['nombre']}")
             
@@ -569,7 +548,6 @@ def crear_todo(request):
                 resultado.append(f"   👤 {tienda['email']} / {tienda['password']}")
             else:
                 user = User.objects.get(username=tienda['email'])
-                resultado.append(f"   👤 {tienda['email']} (ya existe)")
             
             # Crear inventario
             inv = Inventario.objects.create(nombre=tienda['nombre'])
@@ -639,7 +617,7 @@ def crear_todo(request):
             
             resultado.append(f"   💰 {ventas_creadas} ventas generadas")
         
-        # ========== 6. RESUMEN FINAL ==========
+        # ========== RESUMEN FINAL ==========
         resultado.append("\n" + "="*60)
         resultado.append("✅ BASE DE DATOS COMPLETA!")
         resultado.append("="*60)
@@ -654,9 +632,139 @@ def crear_todo(request):
         for line in resultado:
             html += f"<p>{line}</p>"
         html += "</div>"
-        html += "<br><a href='/login' style='padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px;'>Ir al Login</a>"
+        html += "<br><a href='/login/' style='padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px;'>Ir al login</a>"
         
         return HttpResponse(html)
         
     except Exception as e:
-        return HttpResponse(f"❌ Error: {str(e)}<br><br><a href='/login'>Volver</a>")
+        return HttpResponse(f"❌ Error: {str(e)}<br><br><a href='/login/'>Volver</a>")
+
+# ================= LIMPIAR BASE DE DATOS =================
+def limpiar_todo(request):
+    """Limpia toda la base de datos"""
+    try:
+        resultado = []
+        resultado.append("🧹 LIMPIANDO BASE DE DATOS")
+        resultado.append("="*50)
+        
+        # 1. Eliminar ventas
+        ventas_count = Venta.objects.count()
+        Venta.objects.all().delete()
+        resultado.append(f"✅ Ventas eliminadas: {ventas_count}")
+        
+        # 2. Eliminar productos
+        productos_count = Producto.objects.count()
+        Producto.objects.all().delete()
+        resultado.append(f"✅ Productos eliminados: {productos_count}")
+        
+        # 3. Eliminar relaciones usuario-inventario
+        relaciones_count = UsuarioInventario.objects.count()
+        UsuarioInventario.objects.all().delete()
+        resultado.append(f"✅ Relaciones eliminadas: {relaciones_count}")
+        
+        # 4. Eliminar inventarios
+        inventarios_count = Inventario.objects.count()
+        Inventario.objects.all().delete()
+        resultado.append(f"✅ Inventarios eliminados: {inventarios_count}")
+        
+        # 5. Eliminar usuarios (excepto admin)
+        User.objects.exclude(username='admin@email.com').delete()
+        resultado.append("✅ Usuarios eliminados (excepto admin)")
+        
+        # 6. Asegurar que admin existe
+        if not User.objects.filter(username='admin@email.com').exists():
+            User.objects.create_superuser('admin@email.com', 'admin@email.com', 'admin123')
+            resultado.append("✅ Admin creado: admin@email.com / admin123")
+        
+        resultado.append("="*50)
+        resultado.append("✅ BASE DE DATOS LIMPIADA!")
+        
+        html = "<h1>🧹 Base de datos limpiada exitosamente</h1>"
+        html += "<div style='font-family: monospace; background: #f0f0f0; padding: 20px; border-radius: 10px;'>"
+        for line in resultado:
+            html += f"<p>{line}</p>"
+        html += "</div>"
+        html += "<br><a href='/crear_admin/' style='padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px;'>1. Crear admin y test</a>"
+        html += "<br><br><a href='/crear_todo/' style='padding: 10px 20px; background: #28a745; color: white; text-decoration: none; border-radius: 5px;'>2. Crear todas las tiendas</a>"
+        html += "<br><br><a href='/login/' style='padding: 10px 20px; background: #6c757d; color: white; text-decoration: none; border-radius: 5px;'>3. Ir al login</a>"
+        
+        return HttpResponse(html)
+    except Exception as e:
+        return HttpResponse(f"❌ Error: {str(e)}")
+
+# ================= REPARAR USUARIOS =================
+def reparar_usuarios(request):
+    """Repara usuarios sin inventario"""
+    try:
+        resultado = []
+        resultado.append("🔧 REPARANDO USUARIOS")
+        resultado.append("="*50)
+        
+        for user in User.objects.all():
+            try:
+                perfil = UsuarioInventario.objects.get(usuario=user)
+                resultado.append(f"✅ {user.email} -> {perfil.inventario.nombre}")
+            except UsuarioInventario.DoesNotExist:
+                resultado.append(f"⚠️ {user.email} -> Creando inventario...")
+                inventario = Inventario.objects.create(nombre=f"Inventario de {user.email}")
+                UsuarioInventario.objects.create(usuario=user, inventario=inventario)
+                resultado.append(f"✅ {user.email} -> {inventario.nombre} creado")
+        
+        resultado.append("="*50)
+        resultado.append("✅ REPARACIÓN COMPLETADA")
+        
+        html = "<h1>🔧 Reparación completada</h1>"
+        html += "<div style='font-family: monospace; background: #f0f0f0; padding: 20px; border-radius: 10px;'>"
+        for line in resultado:
+            html += f"<p>{line}</p>"
+        html += "</div>"
+        html += "<br><a href='/login/' style='padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px;'>Ir al login</a>"
+        
+        return HttpResponse(html)
+    except Exception as e:
+        return HttpResponse(f"❌ Error: {str(e)}")
+
+# ================= RESETEAR ADMIN =================
+def resetear_admin(request):
+    """Resetea el admin y test completamente"""
+    try:
+        resultado = []
+        resultado.append("🔄 RESETEANDO ADMIN Y TEST")
+        resultado.append("="*50)
+        
+        # Eliminar admin y test
+        User.objects.filter(username='admin@email.com').delete()
+        User.objects.filter(username='test@email.com').delete()
+        resultado.append("✅ Admin y test eliminados")
+        
+        # Crear admin
+        User.objects.create_superuser('admin@email.com', 'admin@email.com', 'admin123')
+        resultado.append("✅ Admin creado: admin@email.com / admin123")
+        
+        # Crear test
+        User.objects.create_user('test@email.com', 'test@email.com', '1234')
+        resultado.append("✅ Test creado: test@email.com / 1234")
+        
+        # Crear inventario Test
+        inv_test, _ = Inventario.objects.get_or_create(nombre='Test')
+        resultado.append("✅ Inventario Test creado")
+        
+        # Asignar test a su inventario
+        user_test = User.objects.get(username='test@email.com')
+        if not UsuarioInventario.objects.filter(usuario=user_test).exists():
+            UsuarioInventario.objects.create(usuario=user_test, inventario=inv_test)
+            resultado.append("✅ Relación test-inventario creada")
+        
+        resultado.append("="*50)
+        resultado.append("✅ ADMIN Y TEST RESETEADOS!")
+        
+        html = "<h1>🔄 Admin y test reseteados</h1>"
+        html += "<div style='font-family: monospace; background: #f0f0f0; padding: 20px; border-radius: 10px;'>"
+        for line in resultado:
+            html += f"<p>{line}</p>"
+        html += "</div>"
+        html += "<br><a href='/login/' style='padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px;'>Ir al login</a>"
+        
+        return HttpResponse(html)
+    except Exception as e:
+        return HttpResponse(f"❌ Error: {str(e)}")
