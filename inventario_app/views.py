@@ -62,6 +62,11 @@ def register(request):
     
     return render(request, 'inventario_app/register.html')
 
+# ================= LOGOUT =================
+def logout_view(request):
+    logout(request)
+    return redirect('login')
+
 # ================= INDEX =================
 @login_required
 def index(request):
@@ -121,11 +126,6 @@ def ventas(request):
         'ventas': ventas_list,
         'total_ventas': total_ventas
     })
-
-# ================= LOGOUT =================
-def logout_view(request):
-    logout(request)
-    return redirect('login')
 
 # ================= BUSCAR PRODUCTO =================
 @login_required
@@ -440,3 +440,156 @@ def crear_inventario(request):
             messages.error(request, '❌ Nombre inválido')
     
     return redirect('admin_panel')
+
+# ================= INICIALIZAR BASE DE DATOS =================
+def inicializar_bd(request):
+    """Endpoint para inicializar la base de datos desde el navegador"""
+    
+    # Verificar si el usuario es admin
+    if not request.user.is_authenticated or not request.user.is_superuser:
+        return HttpResponse("❌ Debes iniciar sesión como administrador para ejecutar esto.")
+    
+    try:
+        # Verificar si ya hay datos
+        if Inventario.objects.exists():
+            return HttpResponse("✅ La base de datos ya está inicializada.")
+        
+        resultado = []
+        
+        # DEFINIR LAS 4 TIENDAS
+        tiendas = [
+            {"nombre": "Repmotos", "email": "repmotos@email.com", "password": "123456", 
+             "factor_precio": 1.0, "stock_base": 100, "num_productos": 20, "ventas_por_dia": 3, "dias_historial": 45},
+            {"nombre": "MotoPartes SAS", "email": "motopartes@email.com", "password": "mp2024", 
+             "factor_precio": 0.85, "stock_base": 150, "num_productos": 20, "ventas_por_dia": 5, "dias_historial": 60},
+            {"nombre": "Rapimotos", "email": "rapimotos@email.com", "password": "rapi123", 
+             "factor_precio": 1.20, "stock_base": 60, "num_productos": 18, "ventas_por_dia": 2, "dias_historial": 30},
+            {"nombre": "Motorepuestos Plus", "email": "motoplus@email.com", "password": "plus2024", 
+             "factor_precio": 0.90, "stock_base": 200, "num_productos": 25, "ventas_por_dia": 4, "dias_historial": 50}
+        ]
+        
+        # CATÁLOGO DE PRODUCTOS
+        productos_base = [
+            {"nombre": "Aceite 4T", "categoria": "Lubricantes", "precio_base": 25000},
+            {"nombre": "Filtro de aire", "categoria": "Repuestos", "precio_base": 15000},
+            {"nombre": "Bujía NGK", "categoria": "Repuestos", "precio_base": 10000},
+            {"nombre": "Casco integral", "categoria": "Accesorios", "precio_base": 120000},
+            {"nombre": "Guantes moto", "categoria": "Accesorios", "precio_base": 30000},
+            {"nombre": "Cadena moto", "categoria": "Transmisión", "precio_base": 80000},
+            {"nombre": "Kit arrastre", "categoria": "Transmisión", "precio_base": 150000},
+            {"nombre": "Llanta delantera", "categoria": "Llantas", "precio_base": 90000},
+            {"nombre": "Llanta trasera", "categoria": "Llantas", "precio_base": 110000},
+            {"nombre": "Pastillas de freno", "categoria": "Frenos", "precio_base": 20000},
+            {"nombre": "Manillar", "categoria": "Repuestos", "precio_base": 45000},
+            {"nombre": "Espejos retrovisores", "categoria": "Accesorios", "precio_base": 12000},
+            {"nombre": "Batería moto", "categoria": "Eléctricos", "precio_base": 85000},
+            {"nombre": "Luces LED", "categoria": "Accesorios", "precio_base": 25000},
+            {"nombre": "Disco de freno", "categoria": "Frenos", "precio_base": 35000},
+            {"nombre": "Bomba de freno", "categoria": "Frenos", "precio_base": 55000},
+            {"nombre": "Cable de acelerador", "categoria": "Repuestos", "precio_base": 18000},
+            {"nombre": "Regulador de voltaje", "categoria": "Eléctricos", "precio_base": 42000},
+            {"nombre": "Bobina de encendido", "categoria": "Eléctricos", "precio_base": 38000},
+            {"nombre": "Carburador", "categoria": "Motor", "precio_base": 95000},
+        ]
+        
+        # CREAR ADMIN
+        if not User.objects.filter(username='admin@email.com').exists():
+            User.objects.create_superuser('admin@email.com', 'admin@email.com', 'admin123')
+            resultado.append("✅ Admin: admin@email.com / admin123")
+        else:
+            resultado.append("✅ Admin ya existe")
+        
+        # CREAR INVENTARIOS
+        inv_principal = Inventario.objects.create(nombre="Principal")
+        inv_test = Inventario.objects.create(nombre="Test")
+        resultado.append("✅ Inventario Principal y Test creados")
+        
+        # CREAR TIENDAS
+        for tienda in tiendas:
+            if not User.objects.filter(username=tienda['email']).exists():
+                user = User.objects.create_user(
+                    username=tienda['email'],
+                    email=tienda['email'],
+                    password=tienda['password']
+                )
+                resultado.append(f"👤 {tienda['email']} / {tienda['password']}")
+            else:
+                user = User.objects.get(username=tienda['email'])
+                resultado.append(f"👤 {tienda['email']} (ya existe)")
+            
+            inv = Inventario.objects.create(nombre=tienda['nombre'])
+            UsuarioInventario.objects.create(usuario=user, inventario=inv)
+            
+            # PRODUCTOS
+            for i in range(min(tienda['num_productos'], len(productos_base))):
+                prod_base = productos_base[i]
+                variacion = random.uniform(0.95, 1.05)
+                precio = round(prod_base['precio_base'] * tienda['factor_precio'] * variacion, 2)
+                stock_variacion = random.randint(-30, 30)
+                stock = max(0, tienda['stock_base'] + stock_variacion)
+                
+                Producto.objects.create(
+                    nombre=prod_base['nombre'],
+                    categoria=prod_base['categoria'],
+                    cantidad=stock,
+                    precio=precio,
+                    inventario=inv
+                )
+            
+            # VENTAS ALEATORIAS
+            ventas_creadas = 0
+            for dia in range(tienda['dias_historial']):
+                num_ventas_dia = max(1, int(tienda['ventas_por_dia'] * random.uniform(0.5, 1.5)))
+                for _ in range(num_ventas_dia):
+                    productos = Producto.objects.filter(inventario=inv)
+                    if productos.exists():
+                        producto = random.choice(list(productos[:15]))
+                        if producto.precio < 20000:
+                            cantidad = random.randint(2, 8)
+                        elif producto.precio < 100000:
+                            cantidad = random.randint(1, 4)
+                        else:
+                            cantidad = random.randint(1, 2)
+                        
+                        descuento = random.uniform(0, 0.15)
+                        precio_venta = round(producto.precio * (1 - descuento), 2)
+                        fecha = timezone.now() - timedelta(days=dia)
+                        
+                        Venta.objects.create(
+                            producto=producto.nombre,
+                            cantidad=cantidad,
+                            precio=precio_venta,
+                            fecha=fecha,
+                            inventario=inv
+                        )
+                        ventas_creadas += 1
+                        producto.cantidad = max(0, producto.cantidad - cantidad)
+                        producto.save()
+            
+            resultado.append(f"✅ {tienda['nombre']}: {Producto.objects.filter(inventario=inv).count()} productos, {ventas_creadas} ventas")
+        
+        # CREAR USUARIO TEST
+        if not User.objects.filter(username='test@email.com').exists():
+            user = User.objects.create_user('test@email.com', 'test@email.com', '1234')
+            resultado.append("✅ Test: test@email.com / 1234")
+        else:
+            user = User.objects.get(username='test@email.com')
+            resultado.append("✅ Test ya existe")
+        
+        if not UsuarioInventario.objects.filter(usuario=user).exists():
+            UsuarioInventario.objects.create(usuario=user, inventario=inv_test)
+            resultado.append("✅ Relación test-inventario creada")
+        
+        resultado.append("✅ Base de datos inicializada exitosamente!")
+        
+        html = "<h1>🚀 Base de datos inicializada</h1>"
+        html += "<div style='font-family: monospace; background: #f0f0f0; padding: 20px; border-radius: 10px;'>"
+        for line in resultado:
+            html += f"<p>{line}</p>"
+        html += "</div>"
+        html += "<br><a href='/' style='padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px;'>Ir al Login</a>"
+        
+        return HttpResponse(html)
+        
+    except Exception as e:
+        return HttpResponse(f"❌ Error: {str(e)}<br><br><a href='/'>Volver</a>")
