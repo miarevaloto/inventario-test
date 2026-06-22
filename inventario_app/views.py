@@ -724,6 +724,53 @@ def reparar_usuarios(request):
     except Exception as e:
         return HttpResponse(f"❌ Error: {str(e)}")
 
+def crear_admin_rapido(request):
+    """Crea admin y test sin necesidad de login"""
+    try:
+        from django.contrib.auth.models import User
+        from .models import Inventario, UsuarioInventario
+        
+        resultado = []
+        
+        # Eliminar admin y test si existen
+        User.objects.filter(username='admin@email.com').delete()
+        User.objects.filter(username='test@email.com').delete()
+        resultado.append("✅ Admin y test eliminados (si existían)")
+        
+        # Crear admin
+        User.objects.create_superuser('admin@email.com', 'admin@email.com', 'admin123')
+        resultado.append("✅ Admin creado: admin@email.com / admin123")
+        
+        # Crear test
+        User.objects.create_user('test@email.com', 'test@email.com', '1234')
+        resultado.append("✅ Test creado: test@email.com / 1234")
+        
+        # Crear inventario Test
+        inv_test, _ = Inventario.objects.get_or_create(nombre='Test')
+        resultado.append("✅ Inventario Test creado")
+        
+        # Asignar test a su inventario
+        user_test = User.objects.get(username='test@email.com')
+        if not UsuarioInventario.objects.filter(usuario=user_test).exists():
+            UsuarioInventario.objects.create(usuario=user_test, inventario=inv_test)
+            resultado.append("✅ Relación test-inventario creada")
+        
+        resultado.append("")
+        resultado.append("📋 CREDENCIALES:")
+        resultado.append("   admin@email.com / admin123")
+        resultado.append("   test@email.com / 1234")
+        
+        html = "<h1>🚀 Admin y test creados exitosamente</h1>"
+        html += "<div style='font-family: monospace; background: #f0f0f0; padding: 20px; border-radius: 10px;'>"
+        for line in resultado:
+            html += f"<p>{line}</p>"
+        html += "</div>"
+        html += "<br><a href='/login/' style='padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px;'>Ir al login</a>"
+        
+        return HttpResponse(html)
+    except Exception as e:
+        return HttpResponse(f"❌ Error: {str(e)}")
+
 # ================= RESETEAR ADMIN =================
 def resetear_admin(request):
     """Resetea el admin y test completamente"""
