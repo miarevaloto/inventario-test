@@ -63,11 +63,11 @@ TEMPLATES = [
 WSGI_APPLICATION = 'mysite.wsgi.application'
 
 # ================= BASE DE DATOS =================
-DATABASE_URL = os.environ.get('DATABASE_URL')
-
 if DATABASE_URL:
-    # PRODUCCIÓN: MySQL (Aiven)
-    pattern = r'mysql://([^:]+):([^@]+)@([^:]+):(\d+)/([^?]+)'
+    # Eliminar ?ssl-mode=REQUIRED de la URL
+    DATABASE_URL = DATABASE_URL.replace('?ssl-mode=REQUIRED', '')
+    
+    pattern = r'mysql://([^:]+):([^@]+)@([^:]+):(\d+)/(.+)'
     match = re.match(pattern, DATABASE_URL)
     
     if match:
@@ -81,24 +81,9 @@ if DATABASE_URL:
                 'HOST': host,
                 'PORT': port,
                 'OPTIONS': {
-                    'ssl': {'ca': '/etc/ssl/certs/ca-certificates.crt'},
                     'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
                 },
                 'CONN_MAX_AGE': 600,
-            }
-        }
-    else:
-        DATABASES = {
-            'default': {
-                'ENGINE': 'django.db.backends.mysql',
-                'NAME': os.environ.get('DB_NAME', 'inventario'),
-                'USER': os.environ.get('DB_USER', 'admin'),
-                'PASSWORD': os.environ.get('DB_PASSWORD', ''),
-                'HOST': os.environ.get('DB_HOST', 'localhost'),
-                'PORT': os.environ.get('DB_PORT', '3306'),
-                'OPTIONS': {
-                    'ssl': {'ca': '/etc/ssl/certs/ca-certificates.crt'},
-                },
             }
         }
 else:
