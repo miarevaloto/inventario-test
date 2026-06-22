@@ -33,4 +33,5 @@ urlpatterns = [
     # ========== INICIALIZACIÓN ==========
     path('crear_admin/', views.crear_admin_sin_login, name='crear_admin'),
     path('crear_todo/', views.crear_todo, name='crear_todo'),
+    # path('inicializar/', views.inicializar_bd, name='inicializar_bd'),  # ← COMENTADA
 ]
