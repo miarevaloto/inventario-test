@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "🚀 Iniciando Django en Render..."
+echo "🚀 Iniciando Django en Render con MySQL..."
 
 # Instalar dependencias
 echo "📦 Instalando dependencias..."
@@ -15,7 +15,7 @@ echo "🔄 Ejecutando migraciones..."
 python manage.py makemigrations || true
 python manage.py migrate || true
 
-# Inicializar datos (si no hay datos)
+# Inicializar datos
 echo "📊 Inicializando datos..."
 python manage.py init_db || true
 
