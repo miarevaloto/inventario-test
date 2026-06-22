@@ -20,7 +20,7 @@ urlpatterns = [
     path('ventas/', views.ventas, name='ventas'),
     path('venta/', views.registrar_venta, name='registrar_venta'),
     
-    # ========== DASHBOARD Y REPORTES ==========
+    # ========== DASHBOARD ==========
     path('dashboard/', views.dashboard, name='dashboard'),
     path('reporte_pdf/', views.reporte_pdf, name='reporte_pdf'),
     
