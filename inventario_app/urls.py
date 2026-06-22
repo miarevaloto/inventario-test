@@ -20,7 +20,7 @@ urlpatterns = [
     path('ventas/', views.ventas, name='ventas'),
     path('venta/', views.registrar_venta, name='registrar_venta'),
     
-    # ========== DASHBOARD ==========
+    # ========== DASHBOARD Y REPORTES ==========
     path('dashboard/', views.dashboard, name='dashboard'),
     path('reporte_pdf/', views.reporte_pdf, name='reporte_pdf'),
     
@@ -31,6 +31,6 @@ urlpatterns = [
     path('crear_inventario/', views.crear_inventario, name='crear_inventario'),
     
     # ========== INICIALIZACIÓN ==========
-    path('inicializar/', views.inicializar_bd, name='inicializar_bd'),
     path('crear_admin/', views.crear_admin_sin_login, name='crear_admin'),
+    path('crear_todo/', views.crear_todo, name='crear_todo'),
 ]
