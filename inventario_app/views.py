@@ -74,7 +74,8 @@ def index(request):
         perfil = UsuarioInventario.objects.get(usuario=request.user)
         inventario = perfil.inventario
     except UsuarioInventario.DoesNotExist:
-        inventario = Inventario.objects.first()
+        inventario = Inventario.objects.create(nombre=f"Inventario de {request.user.email}")
+        UsuarioInventario.objects.create(usuario=request.user, inventario=inventario)
     
     productos = Producto.objects.filter(inventario=inventario)
     categorias = Producto.objects.filter(inventario=inventario).values_list('categoria', flat=True).distinct()
@@ -92,7 +93,8 @@ def dashboard(request):
         perfil = UsuarioInventario.objects.get(usuario=request.user)
         inventario = perfil.inventario
     except UsuarioInventario.DoesNotExist:
-        inventario = Inventario.objects.first()
+        inventario = Inventario.objects.create(nombre=f"Inventario de {request.user.email}")
+        UsuarioInventario.objects.create(usuario=request.user, inventario=inventario)
     
     total_productos = Producto.objects.filter(inventario=inventario).count()
     stock_total = Producto.objects.filter(inventario=inventario).aggregate(Sum('cantidad'))['cantidad__sum'] or 0
@@ -115,7 +117,8 @@ def ventas(request):
         perfil = UsuarioInventario.objects.get(usuario=request.user)
         inventario = perfil.inventario
     except UsuarioInventario.DoesNotExist:
-        inventario = Inventario.objects.first()
+        inventario = Inventario.objects.create(nombre=f"Inventario de {request.user.email}")
+        UsuarioInventario.objects.create(usuario=request.user, inventario=inventario)
     
     productos = Producto.objects.filter(inventario=inventario)
     ventas_list = Venta.objects.filter(inventario=inventario).order_by('-id')
@@ -441,162 +444,9 @@ def crear_inventario(request):
     
     return redirect('admin_panel')
 
-# ================= INICIALIZAR BASE DE DATOS =================
-def inicializar_bd(request):
-    """Endpoint para inicializar la base de datos desde el navegador"""
-    
-    # Verificar si el usuario es admin
-    if not request.user.is_authenticated or not request.user.is_superuser:
-        return HttpResponse("❌ Debes iniciar sesión como administrador para ejecutar esto.")
-    
-    try:
-        # Verificar si ya hay datos
-        if Inventario.objects.exists():
-            return HttpResponse("✅ La base de datos ya está inicializada.")
-        
-        resultado = []
-        
-        # DEFINIR LAS 4 TIENDAS
-        tiendas = [
-            {"nombre": "Repmotos", "email": "repmotos@email.com", "password": "123456", 
-             "factor_precio": 1.0, "stock_base": 100, "num_productos": 20, "ventas_por_dia": 3, "dias_historial": 45},
-            {"nombre": "MotoPartes SAS", "email": "motopartes@email.com", "password": "mp2024", 
-             "factor_precio": 0.85, "stock_base": 150, "num_productos": 20, "ventas_por_dia": 5, "dias_historial": 60},
-            {"nombre": "Rapimotos", "email": "rapimotos@email.com", "password": "rapi123", 
-             "factor_precio": 1.20, "stock_base": 60, "num_productos": 18, "ventas_por_dia": 2, "dias_historial": 30},
-            {"nombre": "Motorepuestos Plus", "email": "motoplus@email.com", "password": "plus2024", 
-             "factor_precio": 0.90, "stock_base": 200, "num_productos": 25, "ventas_por_dia": 4, "dias_historial": 50}
-        ]
-        
-        # CATÁLOGO DE PRODUCTOS
-        productos_base = [
-            {"nombre": "Aceite 4T", "categoria": "Lubricantes", "precio_base": 25000},
-            {"nombre": "Filtro de aire", "categoria": "Repuestos", "precio_base": 15000},
-            {"nombre": "Bujía NGK", "categoria": "Repuestos", "precio_base": 10000},
-            {"nombre": "Casco integral", "categoria": "Accesorios", "precio_base": 120000},
-            {"nombre": "Guantes moto", "categoria": "Accesorios", "precio_base": 30000},
-            {"nombre": "Cadena moto", "categoria": "Transmisión", "precio_base": 80000},
-            {"nombre": "Kit arrastre", "categoria": "Transmisión", "precio_base": 150000},
-            {"nombre": "Llanta delantera", "categoria": "Llantas", "precio_base": 90000},
-            {"nombre": "Llanta trasera", "categoria": "Llantas", "precio_base": 110000},
-            {"nombre": "Pastillas de freno", "categoria": "Frenos", "precio_base": 20000},
-            {"nombre": "Manillar", "categoria": "Repuestos", "precio_base": 45000},
-            {"nombre": "Espejos retrovisores", "categoria": "Accesorios", "precio_base": 12000},
-            {"nombre": "Batería moto", "categoria": "Eléctricos", "precio_base": 85000},
-            {"nombre": "Luces LED", "categoria": "Accesorios", "precio_base": 25000},
-            {"nombre": "Disco de freno", "categoria": "Frenos", "precio_base": 35000},
-            {"nombre": "Bomba de freno", "categoria": "Frenos", "precio_base": 55000},
-            {"nombre": "Cable de acelerador", "categoria": "Repuestos", "precio_base": 18000},
-            {"nombre": "Regulador de voltaje", "categoria": "Eléctricos", "precio_base": 42000},
-            {"nombre": "Bobina de encendido", "categoria": "Eléctricos", "precio_base": 38000},
-            {"nombre": "Carburador", "categoria": "Motor", "precio_base": 95000},
-        ]
-        
-        # CREAR ADMIN
-        if not User.objects.filter(username='admin@email.com').exists():
-            User.objects.create_superuser('admin@email.com', 'admin@email.com', 'admin123')
-            resultado.append("✅ Admin: admin@email.com / admin123")
-        else:
-            resultado.append("✅ Admin ya existe")
-        
-        # CREAR INVENTARIOS
-        inv_principal = Inventario.objects.create(nombre="Principal")
-        inv_test = Inventario.objects.create(nombre="Test")
-        resultado.append("✅ Inventario Principal y Test creados")
-        
-        # CREAR TIENDAS
-        for tienda in tiendas:
-            if not User.objects.filter(username=tienda['email']).exists():
-                user = User.objects.create_user(
-                    username=tienda['email'],
-                    email=tienda['email'],
-                    password=tienda['password']
-                )
-                resultado.append(f"👤 {tienda['email']} / {tienda['password']}")
-            else:
-                user = User.objects.get(username=tienda['email'])
-                resultado.append(f"👤 {tienda['email']} (ya existe)")
-            
-            inv = Inventario.objects.create(nombre=tienda['nombre'])
-            UsuarioInventario.objects.create(usuario=user, inventario=inv)
-            
-            # PRODUCTOS
-            for i in range(min(tienda['num_productos'], len(productos_base))):
-                prod_base = productos_base[i]
-                variacion = random.uniform(0.95, 1.05)
-                precio = round(prod_base['precio_base'] * tienda['factor_precio'] * variacion, 2)
-                stock_variacion = random.randint(-30, 30)
-                stock = max(0, tienda['stock_base'] + stock_variacion)
-                
-                Producto.objects.create(
-                    nombre=prod_base['nombre'],
-                    categoria=prod_base['categoria'],
-                    cantidad=stock,
-                    precio=precio,
-                    inventario=inv
-                )
-            
-            # VENTAS ALEATORIAS
-            ventas_creadas = 0
-            for dia in range(tienda['dias_historial']):
-                num_ventas_dia = max(1, int(tienda['ventas_por_dia'] * random.uniform(0.5, 1.5)))
-                for _ in range(num_ventas_dia):
-                    productos = Producto.objects.filter(inventario=inv)
-                    if productos.exists():
-                        producto = random.choice(list(productos[:15]))
-                        if producto.precio < 20000:
-                            cantidad = random.randint(2, 8)
-                        elif producto.precio < 100000:
-                            cantidad = random.randint(1, 4)
-                        else:
-                            cantidad = random.randint(1, 2)
-                        
-                        descuento = random.uniform(0, 0.15)
-                        precio_venta = round(producto.precio * (1 - descuento), 2)
-                        fecha = timezone.now() - timedelta(days=dia)
-                        
-                        Venta.objects.create(
-                            producto=producto.nombre,
-                            cantidad=cantidad,
-                            precio=precio_venta,
-                            fecha=fecha,
-                            inventario=inv
-                        )
-                        ventas_creadas += 1
-                        producto.cantidad = max(0, producto.cantidad - cantidad)
-                        producto.save()
-            
-            resultado.append(f"✅ {tienda['nombre']}: {Producto.objects.filter(inventario=inv).count()} productos, {ventas_creadas} ventas")
-        
-        # CREAR USUARIO TEST
-        if not User.objects.filter(username='test@email.com').exists():
-            user = User.objects.create_user('test@email.com', 'test@email.com', '1234')
-            resultado.append("✅ Test: test@email.com / 1234")
-        else:
-            user = User.objects.get(username='test@email.com')
-            resultado.append("✅ Test ya existe")
-        
-        if not UsuarioInventario.objects.filter(usuario=user).exists():
-            UsuarioInventario.objects.create(usuario=user, inventario=inv_test)
-            resultado.append("✅ Relación test-inventario creada")
-        
-        resultado.append("✅ Base de datos inicializada exitosamente!")
-        
-        html = "<h1>🚀 Base de datos inicializada</h1>"
-        html += "<div style='font-family: monospace; background: #f0f0f0; padding: 20px; border-radius: 10px;'>"
-        for line in resultado:
-            html += f"<p>{line}</p>"
-        html += "</div>"
-        html += "<br><a href='/' style='padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px;'>Ir al Login</a>"
-        
-        return HttpResponse(html)
-        
-    except Exception as e:
-        return HttpResponse(f"❌ Error: {str(e)}<br><br><a href='/'>Volver</a>")
-
 # ================= CREAR ADMIN SIN LOGIN =================
 def crear_admin_sin_login(request):
-    """Crea admin y test sin necesidad de login (solo para primera configuración en Render)"""
+    """Crea admin y test sin necesidad de login (solo para primera configuración)"""
     try:
         resultado = []
         
@@ -628,14 +478,178 @@ def crear_admin_sin_login(request):
             UsuarioInventario.objects.create(usuario=user, inventario=inv_test)
             resultado.append("✅ Relación test-inventario creada")
         
-        # Mostrar todos los usuarios
-        resultado.append("")
-        resultado.append("📋 USUARIOS EN LA BASE DE DATOS:")
-        for u in User.objects.all():
-            es_admin = "👑 Admin" if u.is_superuser else "👤 Usuario"
-            resultado.append(f"   {u.email} - {es_admin}")
-        
         html = "<h1>🚀 Usuarios creados exitosamente</h1>"
+        html += "<div style='font-family: monospace; background: #f0f0f0; padding: 20px; border-radius: 10px;'>"
+        for line in resultado:
+            html += f"<p>{line}</p>"
+        html += "</div>"
+        html += "<br><a href='/login' style='padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px;'>Ir al Login</a>"
+        
+        return HttpResponse(html)
+        
+    except Exception as e:
+        return HttpResponse(f"❌ Error: {str(e)}<br><br><a href='/login'>Volver</a>")
+
+# ================= CREAR TIENDAS Y DATOS COMPLETOS =================
+def crear_todo(request):
+    """Crea TODAS las tiendas con productos y ventas aleatorias"""
+    try:
+        resultado = []
+        resultado.append("🚀 CREANDO TODAS LAS TIENDAS")
+        resultado.append("="*60)
+        
+        # ========== 1. DEFINIR LAS 4 TIENDAS ==========
+        tiendas = [
+            {"nombre": "Repmotos", "email": "repmotos@email.com", "password": "123456", 
+             "factor_precio": 1.0, "stock_base": 100, "num_productos": 20, "ventas_por_dia": 3, "dias_historial": 45},
+            {"nombre": "MotoPartes SAS", "email": "motopartes@email.com", "password": "mp2024", 
+             "factor_precio": 0.85, "stock_base": 150, "num_productos": 20, "ventas_por_dia": 5, "dias_historial": 60},
+            {"nombre": "Rapimotos", "email": "rapimotos@email.com", "password": "rapi123", 
+             "factor_precio": 1.20, "stock_base": 60, "num_productos": 18, "ventas_por_dia": 2, "dias_historial": 30},
+            {"nombre": "Motorepuestos Plus", "email": "motoplus@email.com", "password": "plus2024", 
+             "factor_precio": 0.90, "stock_base": 200, "num_productos": 25, "ventas_por_dia": 4, "dias_historial": 50}
+        ]
+        
+        # ========== 2. CATÁLOGO DE PRODUCTOS ==========
+        productos_base = [
+            {"nombre": "Aceite 4T", "categoria": "Lubricantes", "precio_base": 25000},
+            {"nombre": "Filtro de aire", "categoria": "Repuestos", "precio_base": 15000},
+            {"nombre": "Bujía NGK", "categoria": "Repuestos", "precio_base": 10000},
+            {"nombre": "Casco integral", "categoria": "Accesorios", "precio_base": 120000},
+            {"nombre": "Guantes moto", "categoria": "Accesorios", "precio_base": 30000},
+            {"nombre": "Cadena moto", "categoria": "Transmisión", "precio_base": 80000},
+            {"nombre": "Kit arrastre", "categoria": "Transmisión", "precio_base": 150000},
+            {"nombre": "Llanta delantera", "categoria": "Llantas", "precio_base": 90000},
+            {"nombre": "Llanta trasera", "categoria": "Llantas", "precio_base": 110000},
+            {"nombre": "Pastillas de freno", "categoria": "Frenos", "precio_base": 20000},
+            {"nombre": "Manillar", "categoria": "Repuestos", "precio_base": 45000},
+            {"nombre": "Espejos retrovisores", "categoria": "Accesorios", "precio_base": 12000},
+            {"nombre": "Batería moto", "categoria": "Eléctricos", "precio_base": 85000},
+            {"nombre": "Luces LED", "categoria": "Accesorios", "precio_base": 25000},
+            {"nombre": "Disco de freno", "categoria": "Frenos", "precio_base": 35000},
+            {"nombre": "Bomba de freno", "categoria": "Frenos", "precio_base": 55000},
+            {"nombre": "Cable de acelerador", "categoria": "Repuestos", "precio_base": 18000},
+            {"nombre": "Regulador de voltaje", "categoria": "Eléctricos", "precio_base": 42000},
+            {"nombre": "Bobina de encendido", "categoria": "Eléctricos", "precio_base": 38000},
+            {"nombre": "Carburador", "categoria": "Motor", "precio_base": 95000},
+        ]
+        
+        # ========== 3. CREAR ADMIN ==========
+        if not User.objects.filter(username='admin@email.com').exists():
+            User.objects.create_superuser('admin@email.com', 'admin@email.com', 'admin123')
+            resultado.append("✅ Admin: admin@email.com / admin123")
+        else:
+            resultado.append("✅ Admin ya existe")
+        
+        # ========== 4. CREAR TEST ==========
+        if not User.objects.filter(username='test@email.com').exists():
+            user_test = User.objects.create_user('test@email.com', 'test@email.com', '1234')
+            resultado.append("✅ Test: test@email.com / 1234")
+        else:
+            user_test = User.objects.get(username='test@email.com')
+            resultado.append("✅ Test ya existe")
+        
+        # Inventario Test
+        inv_test, _ = Inventario.objects.get_or_create(nombre='Test')
+        if not UsuarioInventario.objects.filter(usuario=user_test).exists():
+            UsuarioInventario.objects.create(usuario=user_test, inventario=inv_test)
+            resultado.append("✅ Relación test-inventario creada")
+        
+        # ========== 5. CREAR CADA TIENDA ==========
+        for tienda in tiendas:
+            resultado.append(f"\n🏪 {tienda['nombre']}")
+            
+            # Crear usuario
+            if not User.objects.filter(username=tienda['email']).exists():
+                user = User.objects.create_user(
+                    username=tienda['email'],
+                    email=tienda['email'],
+                    password=tienda['password']
+                )
+                resultado.append(f"   👤 {tienda['email']} / {tienda['password']}")
+            else:
+                user = User.objects.get(username=tienda['email'])
+                resultado.append(f"   👤 {tienda['email']} (ya existe)")
+            
+            # Crear inventario
+            inv = Inventario.objects.create(nombre=tienda['nombre'])
+            UsuarioInventario.objects.create(usuario=user, inventario=inv)
+            
+            # ========== CREAR PRODUCTOS ==========
+            productos_tienda = []
+            for i in range(min(tienda['num_productos'], len(productos_base))):
+                prod_base = productos_base[i]
+                variacion = random.uniform(0.95, 1.05)
+                precio = round(prod_base['precio_base'] * tienda['factor_precio'] * variacion, 2)
+                stock_variacion = random.randint(-30, 30)
+                stock = max(0, tienda['stock_base'] + stock_variacion)
+                
+                producto = Producto.objects.create(
+                    nombre=prod_base['nombre'],
+                    categoria=prod_base['categoria'],
+                    cantidad=stock,
+                    precio=precio,
+                    inventario=inv
+                )
+                productos_tienda.append({
+                    "id": producto.id,
+                    "nombre": prod_base['nombre'],
+                    "precio": precio
+                })
+            
+            resultado.append(f"   📦 {len(productos_tienda)} productos creados")
+            
+            # ========== GENERAR VENTAS ==========
+            fechas = []
+            for i in range(tienda['dias_historial']):
+                fecha = timezone.now() - timedelta(days=i)
+                fechas.append(fecha.strftime("%Y-%m-%d %H:%M:%S"))
+            
+            ventas_creadas = 0
+            for dia in range(tienda['dias_historial']):
+                num_ventas_dia = max(1, int(tienda['ventas_por_dia'] * random.uniform(0.5, 1.5)))
+                for _ in range(num_ventas_dia):
+                    if productos_tienda:
+                        producto = random.choice(productos_tienda[:15])
+                        if producto['precio'] < 20000:
+                            cantidad = random.randint(2, 8)
+                        elif producto['precio'] < 100000:
+                            cantidad = random.randint(1, 4)
+                        else:
+                            cantidad = random.randint(1, 2)
+                        
+                        descuento = random.uniform(0, 0.15)
+                        precio_venta = round(producto['precio'] * (1 - descuento), 2)
+                        fecha_venta = fechas[dia]
+                        
+                        Venta.objects.create(
+                            producto_id=producto['id'],
+                            producto=producto['nombre'],
+                            cantidad=cantidad,
+                            precio=precio_venta,
+                            inventario=inv,
+                            fecha=fecha_venta
+                        )
+                        ventas_creadas += 1
+                        
+                        # Actualizar stock
+                        prod = Producto.objects.get(id=producto['id'])
+                        prod.cantidad = max(0, prod.cantidad - cantidad)
+                        prod.save()
+            
+            resultado.append(f"   💰 {ventas_creadas} ventas generadas")
+        
+        # ========== 6. RESUMEN FINAL ==========
+        resultado.append("\n" + "="*60)
+        resultado.append("✅ BASE DE DATOS COMPLETA!")
+        resultado.append("="*60)
+        resultado.append("\n🔐 CREDENCIALES DE ACCESO:")
+        resultado.append("   admin@email.com / admin123 (Administrador)")
+        for tienda in tiendas:
+            resultado.append(f"   {tienda['email']} / {tienda['password']} → {tienda['nombre']}")
+        resultado.append("   test@email.com / 1234 (Inventario vacío)")
+        
+        html = "<h1>🚀 Base de datos creada exitosamente!</h1>"
         html += "<div style='font-family: monospace; background: #f0f0f0; padding: 20px; border-radius: 10px;'>"
         for line in resultado:
             html += f"<p>{line}</p>"
