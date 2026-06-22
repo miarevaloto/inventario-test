@@ -1,10 +1,11 @@
-# 🏍️ Sistema de Gestión de Inventario para Talleres de Motos
+# 🏍️ Sistema de Gestión de Inventario para sector retail de repuestos para motos
 
-![Django](https://shields.io)
-![Python](https://shields.io)
-![MySQL](https://shields.io)
-![Render](https://shields.io)
-![License](https://shields.io)
+![Django](https://img.shields.io/badge/Django-4.2.7-092E20?style=for-the-badge&logo=django&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1?style=for-the-badge&logo=mysql&logoColor=white)
+![Aiven](https://img.shields.io/badge/Aiven-MySQL-FF6B6B?style=for-the-badge&logo=aiven&logoColor=white)
+![Render](https://img.shields.io/badge/Render-Deploy-46E3B7?style=for-the-badge&logo=render&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-FF6B6B?style=for-the-badge)
 
 ---
 
