@@ -63,9 +63,16 @@ TEMPLATES = [
 WSGI_APPLICATION = 'mysite.wsgi.application'
 
 # ================= BASE DE DATOS =================
+DATABASE_URL = os.environ.get('DATABASE_URL')
+
 if DATABASE_URL:
-    # Eliminar ?ssl-mode=REQUIRED de la URL
-    DATABASE_URL = DATABASE_URL.replace('?ssl-mode=REQUIRED', '')
+    # ✅ ELIMINAR ?ssl-mode=REQUIRED SI EXISTE
+    if '?ssl-mode=REQUIRED' in DATABASE_URL:
+        DATABASE_URL = DATABASE_URL.replace('?ssl-mode=REQUIRED', '')
+    
+    # ✅ ELIMINAR ?ssl-mode=REQUIRED SI ESTÁ AL FINAL
+    if DATABASE_URL.endswith('?ssl-mode=REQUIRED'):
+        DATABASE_URL = DATABASE_URL.replace('?ssl-mode=REQUIRED', '')
     
     pattern = r'mysql://([^:]+):([^@]+)@([^:]+):(\d+)/(.+)'
     match = re.match(pattern, DATABASE_URL)
@@ -86,6 +93,21 @@ if DATABASE_URL:
                 'CONN_MAX_AGE': 600,
             }
         }
+    else:
+        # Fallback: usar variables individuales
+        DATABASES = {
+            'default': {
+                'ENGINE': 'django.db.backends.mysql',
+                'NAME': os.environ.get('DB_NAME', 'inventario'),
+                'USER': os.environ.get('DB_USER', 'admin'),
+                'PASSWORD': os.environ.get('DB_PASSWORD', ''),
+                'HOST': os.environ.get('DB_HOST', 'localhost'),
+                'PORT': os.environ.get('DB_PORT', '3306'),
+                'OPTIONS': {
+                    'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
+                },
+            }
+        }
 else:
     # DESARROLLO LOCAL: SQLite
     DATABASES = {
@@ -95,12 +117,20 @@ else:
         }
     }
 
-# ================= VALIDACIONES =================
+# ================= VALIDACIONES DE CONTRASEÑA =================
 AUTH_PASSWORD_VALIDATORS = [
-    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
-    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
-    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
-    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
+    {
+        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+    },
 ]
 
 # ================= INTERNACIONALIZACIÓN =================
@@ -110,10 +140,26 @@ USE_I18N = True
 USE_TZ = True
 
 # ================= ARCHIVOS ESTÁTICOS =================
-STATIC_URL = 'static/'
-STATICFILES_DIRS = [BASE_DIR / 'static']
+STATIC_URL = '/static/'
+
+# ✅ Directorios donde buscar archivos estáticos (desarrollo)
+STATICFILES_DIRS = [
+    BASE_DIR / 'static',
+]
+
+# ✅ Directorio donde se recolectan los archivos estáticos (producción)
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
+# ✅ Almacenamiento de archivos estáticos
+STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
+
+# ================= ARCHIVOS MEDIA =================
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
+# ================= CONFIGURACIÓN ADICIONAL =================
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# ================= LOGIN/LOGOUT =================
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'index'
