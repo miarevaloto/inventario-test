@@ -2,12 +2,15 @@
 
 echo "🚀 Iniciando Django en Render..."
 
+# Instalar dependencias
+pip install -r requirements.txt
+
+# ✅ RECOLECTAR ARCHIVOS ESTÁTICOS
+python manage.py collectstatic --noinput
+
 # Ejecutar migraciones
 python manage.py makemigrations
 python manage.py migrate
 
-# Recolectar archivos estáticos
-python manage.py collectstatic --noinput
-
-# Iniciar Gunicorn
+# Iniciar Gunicorn con Django
 gunicorn mysite.wsgi:application
