@@ -3,12 +3,18 @@ import pymysql
 from pathlib import Path
 from dotenv import load_dotenv
 
+# Cargar variables de entorno
 load_dotenv()
 
+# Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-key-for-development')
+
+# SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'True') == 'True'
+
 ALLOWED_HOSTS = ['*']
 
 # ================= INSTALAR PYMYSQL PARA MYSQL =================
@@ -17,6 +23,7 @@ try:
 except:
     pass
 
+# ================= APLICACIONES INSTALADAS =================
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -24,10 +31,11 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'django.contrib.humanize',
+    'django.contrib.humanize',  # ✅ Para formatear números (intcomma)
     'inventario_app',
 ]
 
+# ================= MIDDLEWARE =================
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -40,6 +48,7 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = 'mysite.urls'
 
+# ================= TEMPLATES =================
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
@@ -59,15 +68,14 @@ TEMPLATES = [
 WSGI_APPLICATION = 'mysite.wsgi.application'
 
 # ================= BASE DE DATOS =================
-# MySQL en producción, SQLite en desarrollo
 import re
-import os
 
 DATABASE_URL = os.environ.get('DATABASE_URL')
 
 if DATABASE_URL:
     # Producción con MySQL
-    pattern = r'mysql://([^:]+):([^@]+)@([^:]+):(\d+)/(.+)'
+    # Formato: mysql://usuario:contraseña@host:puerto/nombre_bd?ssl-mode=REQUIRED
+    pattern = r'mysql://([^:]+):([^@]+)@([^:]+):(\d+)/([^?]+)'
     match = re.match(pattern, DATABASE_URL)
     
     if match:
@@ -81,8 +89,10 @@ if DATABASE_URL:
                 'HOST': host,
                 'PORT': port,
                 'OPTIONS': {
-                    'ssl': {'ca': '/etc/ssl/certs/ca-certificates.crt'}
-                }
+                    'ssl': {'ca': '/etc/ssl/certs/ca-certificates.crt'},
+                    'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
+                },
+                'CONN_MAX_AGE': 600,
             }
         }
     else:
@@ -95,6 +105,9 @@ if DATABASE_URL:
                 'PASSWORD': os.environ.get('DB_PASSWORD', ''),
                 'HOST': os.environ.get('DB_HOST', 'localhost'),
                 'PORT': os.environ.get('DB_PORT', '3306'),
+                'OPTIONS': {
+                    'ssl': {'ca': '/etc/ssl/certs/ca-certificates.crt'},
+                },
             }
         }
 else:
@@ -106,23 +119,49 @@ else:
         }
     }
 
+# ================= VALIDACIÓN DE CONTRASEÑAS =================
 AUTH_PASSWORD_VALIDATORS = [
-    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
-    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
-    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
-    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
+    {
+        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+    },
 ]
 
+# ================= INTERNACIONALIZACIÓN =================
 LANGUAGE_CODE = 'es-es'
 TIME_ZONE = 'America/Bogota'
 USE_I18N = True
 USE_TZ = True
 
+# ================= ARCHIVOS ESTÁTICOS =================
 STATIC_URL = 'static/'
-STATICFILES_DIRS = [BASE_DIR / 'static']
+
+# ✅ Directorios donde buscar archivos estáticos (desarrollo)
+STATICFILES_DIRS = [
+    BASE_DIR / 'static',
+]
+
+# ✅ Directorio donde se recolectan los archivos estáticos (producción)
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
+# ✅ Almacenamiento de archivos estáticos
+STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
+
+# ================= ARCHIVOS MEDIA (subidos por usuarios) =================
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
+# ================= CONFIGURACIÓN ADICIONAL =================
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# ================= LOGIN/LOGOUT =================
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'index'
