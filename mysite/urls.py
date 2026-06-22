@@ -8,5 +8,5 @@ urlpatterns = [
     path('', include('inventario_app.urls')),
 ]
 
-# ✅ Servir archivos estáticos en producción
+# ✅ Servir archivos estáticos
 urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
