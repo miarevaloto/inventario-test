@@ -833,3 +833,17 @@ def resetear_admin(request):
         return HttpResponse(html)
     except Exception as e:
         return HttpResponse(f"❌ Error: {str(e)}")
+
+def forzar_static(request):
+    """Fuerza la recarga de archivos estáticos"""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ['python', 'manage.py', 'collectstatic', '--noinput', '--clear'],
+            capture_output=True,
+            text=True,
+            cwd='/opt/render/project/src'
+        )
+        return HttpResponse(f"<pre>{result.stdout}</pre>")
+    except Exception as e:
+        return HttpResponse(f"❌ Error: {str(e)}")
