@@ -347,58 +347,50 @@ def admin_view(request):
     })
 
 # ================= CREAR USUARIO ADMIN =================
-
-def crear_admin_sin_login(request):
-    """Crea admin y test sin necesidad de login (solo para primera configuración en Render)"""
-    try:
-        resultado = []
+@login_required
+def crear_usuario_admin(request):
+    if not request.user.is_superuser:
+        messages.error(request, 'No tienes permisos de administrador')
+        return redirect('index')
+    
+    if request.method == 'POST':
+        email = request.POST.get('email')
+        password = request.POST.get('password')
+        rol = request.POST.get('rol', 'usuario')
+        inventario_id = request.POST.get('inventario_id')
+        nuevo_inventario = request.POST.get('nuevo_inventario', '').strip()
         
-        # Crear admin
-        if not User.objects.filter(username='admin@email.com').exists():
-            User.objects.create_superuser('admin@email.com', 'admin@email.com', 'admin123')
-            resultado.append("✅ Admin creado: admin@email.com / admin123")
-        else:
-            resultado.append("✅ Admin ya existe")
+        if not email or not password:
+            messages.error(request, 'Todos los campos son requeridos')
+            return redirect('admin_panel')
         
-        # Crear test
-        if not User.objects.filter(username='test@email.com').exists():
-            User.objects.create_user('test@email.com', 'test@email.com', '1234')
-            resultado.append("✅ Test creado: test@email.com / 1234")
-        else:
-            resultado.append("✅ Test ya existe")
+        if User.objects.filter(username=email).exists():
+            messages.error(request, 'El correo ya está registrado')
+            return redirect('admin_panel')
         
-        # Verificar inventario Test
         try:
-            inv_test = Inventario.objects.get(nombre='Test')
-            resultado.append("✅ Inventario Test encontrado")
-        except Inventario.DoesNotExist:
-            inv_test = Inventario.objects.create(nombre='Test')
-            resultado.append("✅ Inventario Test creado")
-        
-        # Verificar relación test-inventario
-        user = User.objects.get(username='test@email.com')
-        if not UsuarioInventario.objects.filter(usuario=user).exists():
-            UsuarioInventario.objects.create(usuario=user, inventario=inv_test)
-            resultado.append("✅ Relación test-inventario creada")
-        
-        # Mostrar todos los usuarios
-        resultado.append("")
-        resultado.append("📋 USUARIOS EN LA BASE DE DATOS:")
-        for u in User.objects.all():
-            es_admin = "👑 Admin" if u.is_superuser else "👤 Usuario"
-            resultado.append(f"   {u.email} - {es_admin}")
-        
-        html = "<h1>🚀 Usuarios creados exitosamente</h1>"
-        html += "<div style='font-family: monospace; background: #f0f0f0; padding: 20px; border-radius: 10px;'>"
-        for line in resultado:
-            html += f"<p>{line}</p>"
-        html += "</div>"
-        html += "<br><a href='/login' style='padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px;'>Ir al Login</a>"
-        
-        return HttpResponse(html)
-        
-    except Exception as e:
-        return HttpResponse(f"❌ Error: {str(e)}<br><br><a href='/login'>Volver</a>")
+            user = User.objects.create_user(username=email, email=email, password=password)
+            
+            if rol == 'admin':
+                user.is_superuser = True
+                user.is_staff = True
+                user.save()
+            
+            if inventario_id and inventario_id != 'nuevo':
+                inventario = Inventario.objects.get(id=inventario_id)
+            elif nuevo_inventario:
+                inventario = Inventario.objects.create(nombre=nuevo_inventario)
+            else:
+                inventario = Inventario.objects.create(nombre=f'Inventario de {email}')
+            
+            UsuarioInventario.objects.create(usuario=user, inventario=inventario)
+            
+            messages.success(request, f'✅ Usuario {email} creado exitosamente')
+        except Exception as e:
+            messages.error(request, f'❌ Error: {str(e)}')
+    
+    return redirect('admin_panel')
+
 # ================= ELIMINAR USUARIO =================
 @login_required
 def eliminar_usuario(request, id):
@@ -431,50 +423,6 @@ def eliminar_usuario(request, id):
         messages.error(request, f'❌ Error: {str(e)}')
     
     return redirect('admin_panel')
-
-def crear_admin_y_test(request):
-    """Crea admin y test sin necesidad de login (solo para primera configuración)"""
-    try:
-        resultado = []
-        
-        # Crear admin
-        if not User.objects.filter(username='admin@email.com').exists():
-            User.objects.create_superuser('admin@email.com', 'admin@email.com', 'admin123')
-            resultado.append("✅ Admin creado: admin@email.com / admin123")
-        else:
-            resultado.append("✅ Admin ya existe")
-        
-        # Crear test
-        if not User.objects.filter(username='test@email.com').exists():
-            User.objects.create_user('test@email.com', 'test@email.com', '1234')
-            resultado.append("✅ Test creado: test@email.com / 1234")
-        else:
-            resultado.append("✅ Test ya existe")
-        
-        # Verificar inventario Test
-        try:
-            inv_test = Inventario.objects.get(nombre='Test')
-            resultado.append("✅ Inventario Test encontrado")
-        except Inventario.DoesNotExist:
-            inv_test = Inventario.objects.create(nombre='Test')
-            resultado.append("✅ Inventario Test creado")
-        
-        # Verificar relación test-inventario
-        user = User.objects.get(username='test@email.com')
-        if not UsuarioInventario.objects.filter(usuario=user).exists():
-            UsuarioInventario.objects.create(usuario=user, inventario=inv_test)
-            resultado.append("✅ Relación test-inventario creada")
-        
-        html = "<h1>🚀 Usuarios creados</h1>"
-        html += "<div style='font-family: monospace; background: #f0f0f0; padding: 20px; border-radius: 10px;'>"
-        for line in resultado:
-            html += f"<p>{line}</p>"
-        html += "</div>"
-        html += "<br><a href='/login' style='padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px;'>Ir al Login</a>"
-        
-        return HttpResponse(html)
-    except Exception as e:
-        return HttpResponse(f"❌ Error: {str(e)}<br><br><a href='/login'>Volver</a>")
 
 # ================= CREAR INVENTARIO =================
 @login_required
@@ -645,3 +593,56 @@ def inicializar_bd(request):
         
     except Exception as e:
         return HttpResponse(f"❌ Error: {str(e)}<br><br><a href='/'>Volver</a>")
+
+# ================= CREAR ADMIN SIN LOGIN =================
+def crear_admin_sin_login(request):
+    """Crea admin y test sin necesidad de login (solo para primera configuración en Render)"""
+    try:
+        resultado = []
+        
+        # Crear admin
+        if not User.objects.filter(username='admin@email.com').exists():
+            User.objects.create_superuser('admin@email.com', 'admin@email.com', 'admin123')
+            resultado.append("✅ Admin creado: admin@email.com / admin123")
+        else:
+            resultado.append("✅ Admin ya existe")
+        
+        # Crear test
+        if not User.objects.filter(username='test@email.com').exists():
+            User.objects.create_user('test@email.com', 'test@email.com', '1234')
+            resultado.append("✅ Test creado: test@email.com / 1234")
+        else:
+            resultado.append("✅ Test ya existe")
+        
+        # Verificar inventario Test
+        try:
+            inv_test = Inventario.objects.get(nombre='Test')
+            resultado.append("✅ Inventario Test encontrado")
+        except Inventario.DoesNotExist:
+            inv_test = Inventario.objects.create(nombre='Test')
+            resultado.append("✅ Inventario Test creado")
+        
+        # Verificar relación test-inventario
+        user = User.objects.get(username='test@email.com')
+        if not UsuarioInventario.objects.filter(usuario=user).exists():
+            UsuarioInventario.objects.create(usuario=user, inventario=inv_test)
+            resultado.append("✅ Relación test-inventario creada")
+        
+        # Mostrar todos los usuarios
+        resultado.append("")
+        resultado.append("📋 USUARIOS EN LA BASE DE DATOS:")
+        for u in User.objects.all():
+            es_admin = "👑 Admin" if u.is_superuser else "👤 Usuario"
+            resultado.append(f"   {u.email} - {es_admin}")
+        
+        html = "<h1>🚀 Usuarios creados exitosamente</h1>"
+        html += "<div style='font-family: monospace; background: #f0f0f0; padding: 20px; border-radius: 10px;'>"
+        for line in resultado:
+            html += f"<p>{line}</p>"
+        html += "</div>"
+        html += "<br><a href='/login' style='padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px;'>Ir al Login</a>"
+        
+        return HttpResponse(html)
+        
+    except Exception as e:
+        return HttpResponse(f"❌ Error: {str(e)}<br><br><a href='/login'>Volver</a>")
