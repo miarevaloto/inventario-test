@@ -29,7 +29,7 @@ urlpatterns = [
     path('crear_usuario_admin/', views.crear_usuario_admin, name='crear_usuario_admin'),
     path('eliminar_usuario/<int:id>/', views.eliminar_usuario, name='eliminar_usuario'),
     path('crear_inventario/', views.crear_inventario, name='crear_inventario'),
-    path('crear_admin/', views.crear_admin_y_test, name='crear_admin'),
+    path('crear_admin/', views.crear_admin_sin_login, name='crear_admin'),
     
     # ========== INICIALIZACIÓN ==========
     path('inicializar/', views.inicializar_bd, name='inicializar_bd'),
