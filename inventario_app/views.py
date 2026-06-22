@@ -601,7 +601,6 @@ def crear_todo(request):
                         fecha_venta = fechas[dia]
                         
                         Venta.objects.create(
-                            producto_id=producto['id'],
                             producto=producto['nombre'],
                             cantidad=cantidad,
                             precio=precio_venta,
