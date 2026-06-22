@@ -63,6 +63,7 @@ TEMPLATES = [
 WSGI_APPLICATION = 'mysite.wsgi.application'
 
 # ================= BASE DE DATOS =================
+# ✅ DEFINIR DATABASE_URL ANTES DE USARLA
 DATABASE_URL = os.environ.get('DATABASE_URL')
 
 if DATABASE_URL:
@@ -70,7 +71,6 @@ if DATABASE_URL:
     if '?ssl-mode=REQUIRED' in DATABASE_URL:
         DATABASE_URL = DATABASE_URL.replace('?ssl-mode=REQUIRED', '')
     
-    # ✅ ELIMINAR ?ssl-mode=REQUIRED SI ESTÁ AL FINAL
     if DATABASE_URL.endswith('?ssl-mode=REQUIRED'):
         DATABASE_URL = DATABASE_URL.replace('?ssl-mode=REQUIRED', '')
     
@@ -94,7 +94,6 @@ if DATABASE_URL:
             }
         }
     else:
-        # Fallback: usar variables individuales
         DATABASES = {
             'default': {
                 'ENGINE': 'django.db.backends.mysql',
@@ -117,7 +116,7 @@ else:
         }
     }
 
-# ================= VALIDACIONES DE CONTRASEÑA =================
+# ================= VALIDACIONES =================
 AUTH_PASSWORD_VALIDATORS = [
     {
         'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
@@ -141,25 +140,15 @@ USE_TZ = True
 
 # ================= ARCHIVOS ESTÁTICOS =================
 STATIC_URL = '/static/'
-
-# ✅ Directorios donde buscar archivos estáticos (desarrollo)
-STATICFILES_DIRS = [
-    BASE_DIR / 'static',
-]
-
-# ✅ Directorio donde se recolectan los archivos estáticos (producción)
+STATICFILES_DIRS = [BASE_DIR / 'static']
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-
-# ✅ Almacenamiento de archivos estáticos
 STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
 
-# ================= ARCHIVOS MEDIA =================
+# ================= MEDIA =================
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
 # ================= CONFIGURACIÓN ADICIONAL =================
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-
-# ================= LOGIN/LOGOUT =================
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'index'
