@@ -424,6 +424,50 @@ def eliminar_usuario(request, id):
     
     return redirect('admin_panel')
 
+def crear_admin_y_test(request):
+    """Crea admin y test sin necesidad de login (solo para primera configuración)"""
+    try:
+        resultado = []
+        
+        # Crear admin
+        if not User.objects.filter(username='admin@email.com').exists():
+            User.objects.create_superuser('admin@email.com', 'admin@email.com', 'admin123')
+            resultado.append("✅ Admin creado: admin@email.com / admin123")
+        else:
+            resultado.append("✅ Admin ya existe")
+        
+        # Crear test
+        if not User.objects.filter(username='test@email.com').exists():
+            User.objects.create_user('test@email.com', 'test@email.com', '1234')
+            resultado.append("✅ Test creado: test@email.com / 1234")
+        else:
+            resultado.append("✅ Test ya existe")
+        
+        # Verificar inventario Test
+        try:
+            inv_test = Inventario.objects.get(nombre='Test')
+            resultado.append("✅ Inventario Test encontrado")
+        except Inventario.DoesNotExist:
+            inv_test = Inventario.objects.create(nombre='Test')
+            resultado.append("✅ Inventario Test creado")
+        
+        # Verificar relación test-inventario
+        user = User.objects.get(username='test@email.com')
+        if not UsuarioInventario.objects.filter(usuario=user).exists():
+            UsuarioInventario.objects.create(usuario=user, inventario=inv_test)
+            resultado.append("✅ Relación test-inventario creada")
+        
+        html = "<h1>🚀 Usuarios creados</h1>"
+        html += "<div style='font-family: monospace; background: #f0f0f0; padding: 20px; border-radius: 10px;'>"
+        for line in resultado:
+            html += f"<p>{line}</p>"
+        html += "</div>"
+        html += "<br><a href='/login' style='padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px;'>Ir al Login</a>"
+        
+        return HttpResponse(html)
+    except Exception as e:
+        return HttpResponse(f"❌ Error: {str(e)}<br><br><a href='/login'>Volver</a>")
+
 # ================= CREAR INVENTARIO =================
 @login_required
 def crear_inventario(request):
