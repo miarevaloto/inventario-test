@@ -5,7 +5,8 @@ echo "🚀 Iniciando Django en Render..."
 # Instalar dependencias
 pip install -r requirements.txt
 
-# ✅ RECOLECTAR ARCHIVOS ESTÁTICOS
+# ✅ RECOLECTAR ARCHIVOS ESTÁTICOS (FORZADO)
+echo "📁 Recolectando archivos estáticos..."
 python manage.py collectstatic --noinput --clear
 
 # Ejecutar migraciones
@@ -16,4 +17,5 @@ python manage.py migrate || true
 python manage.py init_db || true
 
 # Iniciar servidor
+echo "🚀 Iniciando servidor..."
 gunicorn mysite.wsgi:application
