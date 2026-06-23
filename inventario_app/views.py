@@ -325,15 +325,257 @@ def registrar_venta(request):
 # ================= REPORTE PDF =================
 @login_required
 def reporte_pdf(request):
-    try:
-        perfil = UsuarioInventario.objects.get(usuario=request.user)
-        inventario = perfil.inventario
-    except UsuarioInventario.DoesNotExist:
-        inventario = Inventario.objects.first()
-    
-    productos = Producto.objects.filter(inventario=inventario).order_by('categoria', 'nombre')
-    return generar_reporte_pdf(request.user.email, productos)
+    if "user_id" not in session:
+        return redirect("/login")
 
+    try:
+        from reportlab.lib.pagesizes import letter, landscape
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+        from reportlab.lib import colors
+        from reportlab.lib.units import inch
+        from reportlab.lib.utils import ImageReader
+        from datetime import datetime
+        from django.db.models import Sum, Count
+        import os
+        
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=landscape(letter), 
+                                leftMargin=0.5*inch, rightMargin=0.5*inch,
+                                topMargin=0.5*inch, bottomMargin=0.5*inch)
+        
+        styles = getSampleStyleSheet()
+        
+        # ============================================================
+        # 1. ESTILOS
+        # ============================================================
+        titulo_style = ParagraphStyle(
+            'TituloStyle',
+            parent=styles['Title'],
+            fontSize=18,
+            textColor=colors.HexColor('#1a4d8c'),
+            alignment=TA_CENTER,
+            spaceAfter=10
+        )
+        
+        subtitulo_style = ParagraphStyle(
+            'SubtituloStyle',
+            parent=styles['Heading2'],
+            fontSize=12,
+            textColor=colors.HexColor('#6c757d'),
+            alignment=TA_CENTER,
+            spaceAfter=15
+        )
+        
+        seccion_style = ParagraphStyle(
+            'SeccionStyle',
+            parent=styles['Heading2'],
+            fontSize=14,
+            textColor=colors.HexColor('#1a4d8c'),
+            spaceAfter=10,
+            spaceBefore=15
+        )
+        
+        story = []
+        
+        # ============================================================
+        # 2. CABECERA CON LOGO
+        # ============================================================
+        try:
+            logo_path = os.path.join(settings.BASE_DIR, 'static', 'logo.png')
+            if os.path.exists(logo_path):
+                logo = Image(logo_path, width=1.5*inch, height=0.8*inch)
+                logo.hAlign = 'CENTER'
+                story.append(logo)
+                story.append(Spacer(1, 5))
+        except:
+            pass
+        
+        story.append(Paragraph("MOTOSTOCK PRO", titulo_style))
+        story.append(Paragraph("Sistema de Gestión de Inventarios", subtitulo_style))
+        story.append(Paragraph("📦 REPORTE DE INVENTARIO", titulo_style))
+        
+        fecha_actual = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        nombre_usuario = session.get('nombre', session.get('email', 'Usuario'))
+        story.append(Paragraph(f"Generado por: {nombre_usuario}", styles['Normal']))
+        story.append(Paragraph(f"Fecha: {fecha_actual}", styles['Normal']))
+        story.append(Spacer(1, 20))
+        
+        # ============================================================
+        # 3. DATOS DEL INVENTARIO
+        # ============================================================
+        try:
+            perfil = UsuarioInventario.objects.get(usuario=request.user)
+            inventario = perfil.inventario
+        except UsuarioInventario.DoesNotExist:
+            inventario = Inventario.objects.first()
+        
+        # ============================================================
+        # 4. RESUMEN EJECUTIVO
+        # ============================================================
+        story.append(Paragraph("RESUMEN EJECUTIVO", seccion_style))
+        
+        total_productos = Producto.objects.filter(inventario=inventario).count()
+        stock_total = Producto.objects.filter(inventario=inventario).aggregate(Sum('cantidad'))['cantidad__sum'] or 0
+        categorias_count = Producto.objects.filter(inventario=inventario).values('categoria').distinct().count()
+        ventas_count = Venta.objects.filter(inventario=inventario).count()
+        ventas_total = Venta.objects.filter(inventario=inventario).aggregate(total=Sum('cantidad') * Sum('precio'))['total'] or 0
+        
+        data_resumen = [
+            ["Total Productos", "Stock Total", "Categorías", "Total Ventas", "Monto Ventas"],
+            [str(total_productos), f"{stock_total:,}", str(categorias_count), str(ventas_count), f"${ventas_total:,.2f}"]
+        ]
+        
+        tabla_resumen = Table(data_resumen, colWidths=[1.2*inch, 1.2*inch, 1.2*inch, 1.2*inch, 1.5*inch])
+        tabla_resumen.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a4d8c')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cccccc')),
+            ('BACKGROUND', (0, 1), (-1, 1), colors.HexColor('#e8f0fe')),
+        ]))
+        story.append(tabla_resumen)
+        story.append(Spacer(1, 20))
+        
+        # ============================================================
+        # 5. PRODUCTOS CON STOCK BAJO
+        # ============================================================
+        productos_bajo_stock = Producto.objects.filter(
+            inventario=inventario,
+            cantidad__lt=5
+        ).order_by('cantidad')
+        
+        if productos_bajo_stock:
+            story.append(Paragraph("⚠️ PRODUCTOS CON STOCK BAJO", seccion_style))
+            
+            data_bajo = [["Producto", "Stock", "Stock Mínimo", "Estado"]]
+            for p in productos_bajo_stock:
+                estado = "CRÍTICO" if p.cantidad == 0 else "BAJO"
+                data_bajo.append([p.nombre, str(p.cantidad), "5", estado])
+            
+            tabla_bajo = Table(data_bajo, colWidths=[2.2*inch, 1*inch, 1.2*inch, 1.2*inch])
+            tabla_bajo.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#dc3545')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cccccc')),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#fff3cd')),
+            ]))
+            story.append(tabla_bajo)
+            story.append(Spacer(1, 20))
+        
+        # ============================================================
+        # 6. TOP 5 PRODUCTOS MÁS VENDIDOS
+        # ============================================================
+        top_productos = Venta.objects.filter(
+            inventario=inventario
+        ).values('producto').annotate(
+            vendidos=Sum('cantidad')
+        ).order_by('-vendidos')[:5]
+        
+        if top_productos:
+            story.append(Paragraph("🏆 TOP 5 PRODUCTOS MÁS VENDIDOS", seccion_style))
+            
+            data_top = [["Posición", "Producto", "Unidades Vendidas"]]
+            for i, p in enumerate(top_productos, 1):
+                data_top.append([str(i), p['producto'], str(p['vendidos'])])
+            
+            tabla_top = Table(data_top, colWidths=[0.8*inch, 2.5*inch, 1.5*inch])
+            tabla_top.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#28a745')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('ALIGN', (0, 0), (0, -1), 'CENTER'),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cccccc')),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f5f5f5')]),
+            ]))
+            story.append(tabla_top)
+            story.append(Spacer(1, 20))
+        
+        # ============================================================
+        # 7. LISTA DE PRODUCTOS
+        # ============================================================
+        story.append(Paragraph("📋 LISTADO DE PRODUCTOS", seccion_style))
+        
+        productos = Producto.objects.filter(inventario=inventario).order_by('categoria', 'nombre')
+        
+        if productos:
+            data = [["ID", "Producto", "Categoría", "Cantidad", "Precio Unit.", "Valor Total"]]
+            total_general = 0
+            for p in productos:
+                valor = p.cantidad * p.precio
+                total_general += valor
+                data.append([
+                    str(p.id),
+                    p.nombre,
+                    p.categoria,
+                    str(p.cantidad),
+                    f"${p.precio:,.2f}",
+                    f"${valor:,.2f}"
+                ])
+            data.append(["", "", "", "", "TOTAL GENERAL:", f"${total_general:,.2f}"])
+            
+            table = Table(data, colWidths=[0.6*inch, 1.8*inch, 1.2*inch, 0.8*inch, 1.2*inch, 1.2*inch])
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a4d8c')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+                ('FONTSIZE', (1, 1), (-1, -2), 8),
+                ('ALIGN', (0, 1), (0, -2), 'CENTER'),
+                ('ALIGN', (3, 1), (3, -2), 'CENTER'),
+                ('ALIGN', (4, 1), (-1, -2), 'RIGHT'),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.HexColor('#f5f5f5')]),
+                ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e8f0fe')),
+                ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+                ('ALIGN', (4, -1), (-1, -1), 'RIGHT'),
+                ('GRID', (0, 0), (-1, -2), 0.5, colors.HexColor('#cccccc')),
+                ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#1a4d8c')),
+            ]))
+            story.append(table)
+        else:
+            story.append(Paragraph("No hay productos en este inventario", styles['Normal']))
+        
+        # ============================================================
+        # 8. PIE DE PÁGINA
+        # ============================================================
+        story.append(Spacer(1, 30))
+        story.append(Paragraph("-" * 80, styles['Normal']))
+        story.append(Paragraph(
+            f"Reporte generado el {datetime.now().strftime('%d/%m/%Y a las %H:%M:%S')}",
+            styles['Normal']
+        ))
+        story.append(Paragraph(
+            "Este documento es confidencial y de uso exclusivo de la empresa.",
+            styles['Normal']
+        ))
+        story.append(Paragraph(
+            "MotoStock PRO - Sistema de Gestión de Inventarios v1.0",
+            styles['Normal']
+        ))
+        
+        doc.build(story)
+        buffer.seek(0)
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"reporte_inventario_{timestamp}.pdf"
+        
+        return send_file(buffer, as_attachment=True, 
+                        download_name=filename, 
+                        mimetype='application/pdf')
+    
+    except Exception as e:
+        print(f"❌ Error al generar PDF: {str(e)}", file=sys.stderr)
+        flash(f"❌ Error al generar el reporte: {str(e)}")
+        return redirect("/index")
+        
 # ================= ADMIN PANEL =================
 @login_required
 def admin_view(request):
