@@ -38,4 +38,5 @@ urlpatterns = [
     path('resetear_admin/', views.resetear_admin, name='resetear_admin'),
     path('crear_admin/', views.crear_admin_sin_login, name='crear_admin'),
     path('crear_todo/', views.crear_todo, name='crear_todo'),
+    path('reparar/', views.reparar_usuarios_y_inventarios, name='reparar'),
 ]
