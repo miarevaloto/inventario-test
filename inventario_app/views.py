@@ -327,127 +327,30 @@ def registrar_venta(request):
 # ================= REPORTE PDF =================
 @login_required
 def reporte_pdf(request):
-    if "user_id" not in session:
-        return redirect("/login")
-
     try:
-        from reportlab.lib.pagesizes import letter, landscape
-        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.lib.enums import TA_CENTER
-        from reportlab.lib import colors
-        from reportlab.lib.units import inch
-        from datetime import datetime
-        import io
-        
-        # Obtener inventario del usuario
-        try:
-            perfil = UsuarioInventario.objects.get(usuario=request.user)
-            inventario = perfil.inventario
-        except UsuarioInventario.DoesNotExist:
-            inventario = Inventario.objects.first()
-            if not inventario:
-                return HttpResponse("❌ No hay inventarios disponibles")
-        
-        buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=landscape(letter), 
-                                leftMargin=0.5*inch, rightMargin=0.5*inch,
-                                topMargin=0.5*inch, bottomMargin=0.5*inch)
-        
-        styles = getSampleStyleSheet()
-        
-        titulo_style = ParagraphStyle(
-            'TituloStyle',
-            parent=styles['Title'],
-            fontSize=18,
-            textColor=colors.HexColor('#1a4d8c'),
-            alignment=TA_CENTER,
-            spaceAfter=20
-        )
-        
-        story = []
-        
-        # Título
-        story.append(Paragraph("📦 REPORTE DE INVENTARIO", titulo_style))
-        story.append(Spacer(1, 10))
-        
-        # Fecha y usuario
-        fecha_actual = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-        nombre_usuario = session.get('nombre', session.get('email', 'Usuario'))
-        
-        story.append(Paragraph(f"Generado por: {nombre_usuario}", styles['Normal']))
-        story.append(Paragraph(f"Fecha: {fecha_actual}", styles['Normal']))
-        story.append(Spacer(1, 20))
-        
-        # Listado de productos
-        productos = Producto.objects.filter(inventario=inventario).order_by('categoria', 'nombre')
-        
-        if productos:
-            data = [["ID", "Producto", "Categoría", "Cantidad", "Precio Unit.", "Valor Total"]]
-            total_general = 0
-            for p in productos:
-                valor = p.cantidad * p.precio
-                total_general += valor
-                data.append([
-                    str(p.id),
-                    p.nombre,
-                    p.categoria,
-                    str(p.cantidad),
-                    f"${p.precio:,.2f}",
-                    f"${valor:,.2f}"
-                ])
-            data.append(["", "", "", "", "TOTAL GENERAL:", f"${total_general:,.2f}"])
-            
-            table = Table(data, colWidths=[0.6*inch, 2*inch, 1.2*inch, 0.8*inch, 1.2*inch, 1.2*inch])
-            table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a4d8c')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
-                ('FONTSIZE', (1, 1), (-1, -2), 9),
-                ('ALIGN', (0, 1), (0, -2), 'CENTER'),
-                ('ALIGN', (3, 1), (3, -2), 'CENTER'),
-                ('ALIGN', (4, 1), (-1, -2), 'RIGHT'),
-                ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.HexColor('#f5f5f5')]),
-                ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e8f0fe')),
-                ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
-                ('ALIGN', (4, -1), (-1, -1), 'RIGHT'),
-                ('GRID', (0, 0), (-1, -2), 0.5, colors.HexColor('#cccccc')),
-                ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#1a4d8c')),
-            ]))
-            story.append(table)
-        else:
-            story.append(Paragraph("No hay productos en este inventario", styles['Normal']))
-        
-        # Pie de página
-        story.append(Spacer(1, 30))
-        story.append(Paragraph(f"Reporte generado el {datetime.now().strftime('%d/%m/%Y a las %H:%M:%S')}", 
-                              styles['Normal']))
-        
-        doc.build(story)
-        buffer.seek(0)
-        
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"reporte_inventario_{timestamp}.pdf"
-        
-        return send_file(buffer, as_attachment=True, 
-                        download_name=filename, 
-                        mimetype='application/pdf')
+        perfil = UsuarioInventario.objects.get(usuario=request.user)
+        inventario = perfil.inventario
+    except UsuarioInventario.DoesNotExist:
+        inventario = Inventario.objects.first()
+        if not inventario:
+            flash("❌ No hay inventarios disponibles")
+            return redirect("/dashboard")
     
-    except Exception as e:
-        import traceback
-        # ✅ Mostrar el error en el navegador
-        return HttpResponse(f"""
-        <h1>❌ Error al generar el reporte</h1>
-        <p><strong>Error:</strong> {str(e)}</p>
-        <h2>Detalles del error:</h2>
-        <pre style="background: #f0f0f0; padding: 20px; border-radius: 8px; overflow: auto; max-height: 500px;">
-        {traceback.format_exc()}
-        </pre>
-        <br>
-        <a href="/dashboard/">Volver al Dashboard</a>
-        """)
+    productos = Producto.objects.filter(inventario=inventario).order_by('categoria', 'nombre')
+    
+    # Calcular estadísticas
+    estadisticas = {
+        'total_productos': productos.count(),
+        'stock_total': productos.aggregate(Sum('cantidad'))['cantidad__sum'] or 0,
+        'valor_total': sum(p.cantidad * p.precio for p in productos),
+    }
+    
+    return generar_reporte_pdf(
+        usuario=request.user.email,
+        productos=productos,
+        inventario_nombre=inventario.nombre,
+        estadisticas=estadisticas
+    )
         
 # ================= ADMIN PANEL =================
 @login_required
