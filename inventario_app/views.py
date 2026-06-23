@@ -328,10 +328,17 @@ def registrar_venta(request):
 # ================= REPORTE PDF =================
 @login_required
 def reporte_pdf(request):
+    import logging
+    logger = logging.getLogger(__name__)
+    
     if "user_id" not in session:
+        logger.error("❌ Usuario no autenticado")
         return redirect("/login")
 
     try:
+        logger.info("🔍 Iniciando generación de PDF...")
+        logger.info(f"👤 Usuario: {request.user.email}")
+        
         from reportlab.lib.pagesizes import letter, landscape
         from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -342,12 +349,15 @@ def reporte_pdf(request):
         from django.db.models import Sum
         import io
         
+        logger.info("✅ ReportLab importado correctamente")
+        
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=landscape(letter), 
                                 leftMargin=0.5*inch, rightMargin=0.5*inch,
                                 topMargin=0.5*inch, bottomMargin=0.5*inch)
         
         styles = getSampleStyleSheet()
+        logger.info("✅ Estilos creados")
         
         titulo_style = ParagraphStyle(
             'TituloStyle',
@@ -373,14 +383,23 @@ def reporte_pdf(request):
         story.append(Spacer(1, 20))
         
         # Obtener inventario del usuario
+        logger.info("🔍 Buscando inventario del usuario...")
         try:
             perfil = UsuarioInventario.objects.get(usuario=request.user)
             inventario = perfil.inventario
+            logger.info(f"✅ Inventario encontrado: {inventario.nombre}")
         except UsuarioInventario.DoesNotExist:
+            logger.warning("⚠️ Usuario sin inventario, usando el primero disponible")
             inventario = Inventario.objects.first()
+            if not inventario:
+                logger.error("❌ No hay inventarios disponibles")
+                flash("❌ No hay inventarios disponibles")
+                return redirect("/index")
         
         # Listado de productos
+        logger.info("🔍 Buscando productos...")
         productos = Producto.objects.filter(inventario=inventario).order_by('categoria', 'nombre')
+        logger.info(f"✅ Productos encontrados: {productos.count()}")
         
         if productos:
             data = [["ID", "Producto", "Categoría", "Cantidad", "Precio Unit.", "Valor Total"]]
@@ -398,6 +417,7 @@ def reporte_pdf(request):
                 ])
             data.append(["", "", "", "", "TOTAL GENERAL:", f"${total_general:,.2f}"])
             
+            logger.info("📊 Creando tabla de productos...")
             table = Table(data, colWidths=[0.6*inch, 2*inch, 1.2*inch, 0.8*inch, 1.2*inch, 1.2*inch])
             table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a4d8c')),
@@ -417,7 +437,9 @@ def reporte_pdf(request):
                 ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#1a4d8c')),
             ]))
             story.append(table)
+            logger.info("✅ Tabla creada correctamente")
         else:
+            logger.warning("⚠️ No hay productos en este inventario")
             story.append(Paragraph("No hay productos en este inventario", styles['Normal']))
         
         # Pie de página
@@ -425,20 +447,23 @@ def reporte_pdf(request):
         story.append(Paragraph(f"Reporte generado el {datetime.now().strftime('%d/%m/%Y a las %H:%M:%S')}", 
                               styles['Normal']))
         
+        logger.info("📄 Construyendo documento PDF...")
         doc.build(story)
         buffer.seek(0)
         
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"reporte_inventario_{timestamp}.pdf"
         
+        logger.info(f"✅ PDF generado exitosamente: {filename}")
         return send_file(buffer, as_attachment=True, 
                         download_name=filename, 
                         mimetype='application/pdf')
     
     except Exception as e:
-        print(f"❌ Error al generar PDF: {str(e)}", file=sys.stderr)
+        logger.error(f"❌ Error al generar PDF: {str(e)}")
         import traceback
-        traceback.print_exc()
+        error_trace = traceback.format_exc()
+        logger.error(f"📋 Traceback: {error_trace}")
         flash(f"❌ Error al generar el reporte: {str(e)}")
         return redirect("/index") 
         
