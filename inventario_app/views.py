@@ -6,7 +6,9 @@ from django.contrib import messages
 from django.db.models import Sum
 from django.utils import timezone
 from django.http import JsonResponse, HttpResponse
+from django.conf import settings
 import random
+import traceback
 from datetime import timedelta
 
 from .models import Inventario, Producto, Venta, UsuarioInventario
