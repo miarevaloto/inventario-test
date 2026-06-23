@@ -1107,7 +1107,6 @@ def reparar_usuarios_y_inventarios(request):
             resultado.append("✅ Admin creado: admin@email.com / admin123")
         else:
             admin = User.objects.get(username='admin@email.com')
-            # Asegurar que sea superuser
             if not admin.is_superuser:
                 admin.is_superuser = True
                 admin.is_staff = True
@@ -1119,7 +1118,7 @@ def reparar_usuarios_y_inventarios(request):
         if not UsuarioInventario.objects.filter(usuario=admin).exists():
             inv_principal, _ = Inventario.objects.get_or_create(nombre='Principal')
             UsuarioInventario.objects.create(usuario=admin, inventario=inv_principal)
-            resultado.append("✅ Inventario asignado a admin")
+            resultado.append("✅ Inventario Principal asignado a admin")
         
         # ========== 3. REPARAR TODOS LOS USUARIOS ==========
         for user in User.objects.all():
@@ -1146,7 +1145,29 @@ def reparar_usuarios_y_inventarios(request):
                 UsuarioInventario.objects.create(usuario=user, inventario=inv_test)
                 resultado.append("✅ Inventario Test asignado a test")
         
-        # ========== 5. MOSTRAR TODOS LOS USUARIOS ==========
+        # ========== 5. CREAR TIENDAS ==========
+        tiendas = [
+            {"nombre": "Repmotos", "email": "repmotos@email.com", "password": "123456"},
+            {"nombre": "MotoPartes SAS", "email": "motopartes@email.com", "password": "mp2024"},
+            {"nombre": "Rapimotos", "email": "rapimotos@email.com", "password": "rapi123"},
+            {"nombre": "Motorepuestos Plus", "email": "motoplus@email.com", "password": "plus2024"},
+        ]
+        
+        for tienda in tiendas:
+            if not User.objects.filter(username=tienda['email']).exists():
+                user = User.objects.create_user(tienda['email'], tienda['email'], tienda['password'])
+                resultado.append(f"✅ {tienda['email']} / {tienda['password']}")
+            else:
+                user = User.objects.get(username=tienda['email'])
+                resultado.append(f"✅ {tienda['email']} ya existe")
+            
+            # Verificar inventario
+            inv, _ = Inventario.objects.get_or_create(nombre=tienda['nombre'])
+            if not UsuarioInventario.objects.filter(usuario=user).exists():
+                UsuarioInventario.objects.create(usuario=user, inventario=inv)
+                resultado.append(f"   📦 Inventario {tienda['nombre']} asignado")
+        
+        # ========== 6. MOSTRAR TODOS LOS USUARIOS ==========
         resultado.append("")
         resultado.append("📋 USUARIOS REGISTRADOS:")
         for u in User.objects.all():
