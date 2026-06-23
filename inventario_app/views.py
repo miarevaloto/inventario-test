@@ -325,9 +325,8 @@ def registrar_venta(request):
     return redirect('ventas')
 
 # ================= REPORTE PDF =================
-# ================= REPORTE PDF =================
-@app.route("/reporte_pdf")
-def reporte_pdf():
+@login_required
+def reporte_pdf(request):
     if "user_id" not in session:
         return redirect("/login")
 
@@ -339,6 +338,16 @@ def reporte_pdf():
         from reportlab.lib import colors
         from reportlab.lib.units import inch
         from datetime import datetime
+        import io
+        
+        # Obtener inventario del usuario
+        try:
+            perfil = UsuarioInventario.objects.get(usuario=request.user)
+            inventario = perfil.inventario
+        except UsuarioInventario.DoesNotExist:
+            inventario = Inventario.objects.first()
+            if not inventario:
+                return HttpResponse("❌ No hay inventarios disponibles")
         
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=landscape(letter), 
@@ -370,14 +379,7 @@ def reporte_pdf():
         story.append(Paragraph(f"Fecha: {fecha_actual}", styles['Normal']))
         story.append(Spacer(1, 20))
         
-        # Obtener inventario del usuario
-        try:
-            perfil = UsuarioInventario.objects.get(usuario=request.user)
-            inventario = perfil.inventario
-        except UsuarioInventario.DoesNotExist:
-            inventario = Inventario.objects.first()
-        
-        # Obtener productos
+        # Listado de productos
         productos = Producto.objects.filter(inventario=inventario).order_by('categoria', 'nombre')
         
         if productos:
@@ -434,9 +436,18 @@ def reporte_pdf():
                         mimetype='application/pdf')
     
     except Exception as e:
-        print(f"❌ Error al generar PDF: {str(e)}", file=sys.stderr)
-        flash(f"❌ Error al generar el reporte: {str(e)}")
-        return redirect("/index")
+        import traceback
+        # ✅ Mostrar el error en el navegador
+        return HttpResponse(f"""
+        <h1>❌ Error al generar el reporte</h1>
+        <p><strong>Error:</strong> {str(e)}</p>
+        <h2>Detalles del error:</h2>
+        <pre style="background: #f0f0f0; padding: 20px; border-radius: 8px; overflow: auto; max-height: 500px;">
+        {traceback.format_exc()}
+        </pre>
+        <br>
+        <a href="/dashboard/">Volver al Dashboard</a>
+        """)
         
 # ================= ADMIN PANEL =================
 @login_required
