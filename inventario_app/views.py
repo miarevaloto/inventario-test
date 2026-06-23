@@ -1089,3 +1089,86 @@ def forzar_static(request):
         return HttpResponse(f"<pre>{result.stdout}</pre>")
     except Exception as e:
         return HttpResponse(f"❌ Error: {str(e)}")
+
+def reparar_usuarios_y_inventarios(request):
+    """Repara todos los usuarios sin inventario y crea admin si no existe"""
+    try:
+        from django.contrib.auth.models import User
+        from django.http import HttpResponse
+        from .models import UsuarioInventario, Inventario
+        
+        resultado = []
+        resultado.append("🔧 REPARANDO USUARIOS E INVENTARIOS")
+        resultado.append("="*50)
+        
+        # ========== 1. CREAR ADMIN SI NO EXISTE ==========
+        if not User.objects.filter(username='admin@email.com').exists():
+            User.objects.create_superuser('admin@email.com', 'admin@email.com', 'admin123')
+            resultado.append("✅ Admin creado: admin@email.com / admin123")
+        else:
+            admin = User.objects.get(username='admin@email.com')
+            # Asegurar que sea superuser
+            if not admin.is_superuser:
+                admin.is_superuser = True
+                admin.is_staff = True
+                admin.save()
+            resultado.append("✅ Admin ya existe")
+        
+        # ========== 2. VERIFICAR INVENTARIO DEL ADMIN ==========
+        admin = User.objects.get(username='admin@email.com')
+        if not UsuarioInventario.objects.filter(usuario=admin).exists():
+            inv_principal, _ = Inventario.objects.get_or_create(nombre='Principal')
+            UsuarioInventario.objects.create(usuario=admin, inventario=inv_principal)
+            resultado.append("✅ Inventario asignado a admin")
+        
+        # ========== 3. REPARAR TODOS LOS USUARIOS ==========
+        for user in User.objects.all():
+            try:
+                perfil = UsuarioInventario.objects.get(usuario=user)
+                resultado.append(f"✅ {user.email} -> {perfil.inventario.nombre}")
+            except UsuarioInventario.DoesNotExist:
+                resultado.append(f"⚠️ {user.email} -> Creando inventario...")
+                inventario = Inventario.objects.create(nombre=f"Inventario de {user.email}")
+                UsuarioInventario.objects.create(usuario=user, inventario=inventario)
+                resultado.append(f"✅ {user.email} -> {inventario.nombre} creado")
+        
+        # ========== 4. CREAR TEST SI NO EXISTE ==========
+        if not User.objects.filter(username='test@email.com').exists():
+            user = User.objects.create_user('test@email.com', 'test@email.com', '1234')
+            resultado.append("✅ Test creado: test@email.com / 1234")
+            inv_test, _ = Inventario.objects.get_or_create(nombre='Test')
+            UsuarioInventario.objects.create(usuario=user, inventario=inv_test)
+            resultado.append("✅ Inventario Test asignado")
+        else:
+            user = User.objects.get(username='test@email.com')
+            if not UsuarioInventario.objects.filter(usuario=user).exists():
+                inv_test, _ = Inventario.objects.get_or_create(nombre='Test')
+                UsuarioInventario.objects.create(usuario=user, inventario=inv_test)
+                resultado.append("✅ Inventario Test asignado a test")
+        
+        # ========== 5. MOSTRAR TODOS LOS USUARIOS ==========
+        resultado.append("")
+        resultado.append("📋 USUARIOS REGISTRADOS:")
+        for u in User.objects.all():
+            es_admin = "👑 Admin" if u.is_superuser else "👤 Usuario"
+            try:
+                inv = UsuarioInventario.objects.get(usuario=u)
+                resultado.append(f"   {u.email} - {es_admin} - {inv.inventario.nombre}")
+            except:
+                resultado.append(f"   {u.email} - {es_admin} - Sin inventario")
+        
+        resultado.append("="*50)
+        resultado.append("✅ REPARACIÓN COMPLETADA")
+        
+        html = "<h1>🔧 Reparación completada</h1>"
+        html += "<div style='font-family: monospace; background: #f0f0f0; padding: 20px; border-radius: 10px;'>"
+        for line in resultado:
+            html += f"<p>{line}</p>"
+        html += "</div>"
+        html += "<br><a href='/login/' style='padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px;'>Ir al login</a>"
+        
+        return HttpResponse(html)
+        
+    except Exception as e:
+        import traceback
+        return HttpResponse(f"❌ Error: {str(e)}<br><br><pre>{traceback.format_exc()}</pre>")
