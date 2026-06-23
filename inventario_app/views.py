@@ -331,6 +331,7 @@ def reporte_pdf(request):
         return redirect("/login")
 
     try:
+        from django.conf import settings
         from reportlab.lib.pagesizes import letter, landscape
         from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
