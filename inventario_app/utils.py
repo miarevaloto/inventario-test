@@ -225,7 +225,7 @@ def generar_reporte_pdf(usuario, productos, inventario_nombre=None, estadisticas
         styles['Normal']
     ))
     story.append(Paragraph(
-        "MotoStock PRO - Sistema de Gestión de Inventarios v1.0",
+        "BAMM - Sistema de Gestión de Inventarios v1.0",
         styles['Normal']
     ))
     
