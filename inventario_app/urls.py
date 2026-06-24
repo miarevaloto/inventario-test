@@ -28,8 +28,11 @@ urlpatterns = [
     # ========== ADMIN ==========
     path('admin_panel/', views.admin_view, name='admin_panel'),
     path('crear_usuario_admin/', views.crear_usuario_admin, name='crear_usuario_admin'),
-    path('eliminar_usuario/<int:id>/', views.eliminar_usuario, name='eliminar_usuario'),
+    path('asignar_inventario/', views.asignar_inventario, name='asignar_inventario'),
     path('crear_inventario/', views.crear_inventario, name='crear_inventario'),
+    path('modificar_inventario/', views.modificar_inventario, name='modificar_inventario'),
+    path('eliminar_inventario/', views.eliminar_inventario, name='eliminar_inventario'),
+    path('eliminar_usuario/<int:id>/', views.eliminar_usuario, name='eliminar_usuario'),
     path('crear_admin_rapido/', views.crear_admin_rapido, name='crear_admin_rapido'),
     
     # ========== REPARACIÓN Y MANTENIMIENTO ==========
