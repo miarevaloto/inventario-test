@@ -367,7 +367,6 @@ def admin_view(request):
         'inventarios': inventarios
     })
 
-# ================= CREAR USUARIO ADMIN =================
 @login_required
 def crear_usuario_admin(request):
     if not request.user.is_superuser:
@@ -397,10 +396,10 @@ def crear_usuario_admin(request):
                 user.is_staff = True
                 user.save()
             
-            if inventario_id and inventario_id != 'nuevo':
-                inventario = Inventario.objects.get(id=inventario_id)
-            elif nuevo_inventario:
+            if inventario_id == 'nuevo' and nuevo_inventario:
                 inventario = Inventario.objects.create(nombre=nuevo_inventario)
+            elif inventario_id and inventario_id != 'nuevo':
+                inventario = Inventario.objects.get(id=inventario_id)
             else:
                 inventario = Inventario.objects.create(nombre=f'Inventario de {email}')
             
@@ -412,40 +411,35 @@ def crear_usuario_admin(request):
     
     return redirect('admin_panel')
 
-# ================= ELIMINAR USUARIO =================
 @login_required
-def eliminar_usuario(request, id):
+def asignar_inventario(request):
     if not request.user.is_superuser:
         messages.error(request, 'No tienes permisos de administrador')
         return redirect('index')
     
-    if id == request.user.id:
-        messages.error(request, 'No puedes eliminarte a ti mismo')
-        return redirect('admin_panel')
-    
-    try:
-        user = User.objects.get(id=id)
+    if request.method == 'POST':
+        user_id = request.POST.get('user_id')
+        inventario_id = request.POST.get('inventario_id')
         
         try:
-            perfil = UsuarioInventario.objects.get(usuario=user)
-            inventario = perfil.inventario
-            perfil.delete()
+            user = User.objects.get(id=user_id)
+            inventario = Inventario.objects.get(id=inventario_id)
             
-            if not UsuarioInventario.objects.filter(inventario=inventario).exists():
-                Producto.objects.filter(inventario=inventario).delete()
-                Venta.objects.filter(inventario=inventario).delete()
-                inventario.delete()
-        except UsuarioInventario.DoesNotExist:
-            pass
-        
-        user.delete()
-        messages.success(request, '✅ Usuario eliminado')
-    except Exception as e:
-        messages.error(request, f'❌ Error: {str(e)}')
+            # Eliminar relación existente (si tiene)
+            UsuarioInventario.objects.filter(usuario=user).delete()
+            
+            # Crear nueva relación
+            UsuarioInventario.objects.create(usuario=user, inventario=inventario)
+            messages.success(request, f'✅ Usuario {user.email} asignado a {inventario.nombre}')
+        except User.DoesNotExist:
+            messages.error(request, '❌ Usuario no encontrado')
+        except Inventario.DoesNotExist:
+            messages.error(request, '❌ Inventario no encontrado')
+        except Exception as e:
+            messages.error(request, f'❌ Error: {str(e)}')
     
     return redirect('admin_panel')
 
-# ================= CREAR INVENTARIO =================
 @login_required
 def crear_inventario(request):
     if not request.user.is_superuser:
@@ -459,6 +453,84 @@ def crear_inventario(request):
             messages.success(request, f'✅ Inventario "{nombre}" creado exitosamente')
         else:
             messages.error(request, '❌ Nombre inválido')
+    
+    return redirect('admin_panel')
+
+@login_required
+def modificar_inventario(request):
+    if not request.user.is_superuser:
+        messages.error(request, 'No tienes permisos de administrador')
+        return redirect('index')
+    
+    if request.method == 'POST':
+        inventario_id = request.POST.get('id')
+        nombre = request.POST.get('nombre', '').strip()
+        
+        try:
+            inventario = Inventario.objects.get(id=inventario_id)
+            inventario.nombre = nombre
+            inventario.save()
+            messages.success(request, f'✅ Inventario modificado a "{nombre}"')
+        except Inventario.DoesNotExist:
+            messages.error(request, '❌ Inventario no encontrado')
+        except Exception as e:
+            messages.error(request, f'❌ Error: {str(e)}')
+    
+    return redirect('admin_panel')
+
+@login_required
+def eliminar_inventario(request):
+    if not request.user.is_superuser:
+        messages.error(request, 'No tienes permisos de administrador')
+        return redirect('index')
+    
+    if request.method == 'POST':
+        inventario_id = request.POST.get('id')
+        
+        try:
+            inventario = Inventario.objects.get(id=inventario_id)
+            
+            # Verificar si tiene productos
+            if Producto.objects.filter(inventario=inventario).exists():
+                messages.error(request, f'❌ No se puede eliminar el inventario porque tiene productos asociados')
+                return redirect('admin_panel')
+            
+            # Verificar si tiene usuarios asignados
+            if UsuarioInventario.objects.filter(inventario=inventario).exists():
+                messages.error(request, f'❌ No se puede eliminar el inventario porque tiene usuarios asignados')
+                return redirect('admin_panel')
+            
+            inventario.delete()
+            messages.success(request, f'✅ Inventario eliminado exitosamente')
+        except Inventario.DoesNotExist:
+            messages.error(request, '❌ Inventario no encontrado')
+        except Exception as e:
+            messages.error(request, f'❌ Error: {str(e)}')
+    
+    return redirect('admin_panel')
+
+@login_required
+def eliminar_usuario(request, id):
+    if not request.user.is_superuser:
+        messages.error(request, 'No tienes permisos de administrador')
+        return redirect('index')
+    
+    if id == request.user.id:
+        messages.error(request, '❌ No puedes eliminarte a ti mismo')
+        return redirect('admin_panel')
+    
+    try:
+        user = User.objects.get(id=id)
+        
+        # Eliminar relación usuario-inventario
+        UsuarioInventario.objects.filter(usuario=user).delete()
+        
+        user.delete()
+        messages.success(request, '✅ Usuario eliminado')
+    except User.DoesNotExist:
+        messages.error(request, '❌ Usuario no encontrado')
+    except Exception as e:
+        messages.error(request, f'❌ Error: {str(e)}')
     
     return redirect('admin_panel')
 
