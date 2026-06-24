@@ -102,7 +102,6 @@
                         <th>ID</th>
                         <th>Email</th>
                         <th>Rol</th>
-                        <th>Inventario Asignado</th>
                         <th>Acciones</th>
                     </tr>
                 </thead>
@@ -117,13 +116,6 @@
                             {% else %}
                                 <span class="badge badge-warning">👤 Usuario</span>
                             {% endif %}
-                        </td>
-                        <td>
-                            {% for perfil in u.perfil_set.all %}
-                                <span class="badge badge-info">📦 {{ perfil.inventario.nombre }}</span>
-                            {% empty %}
-                                <span class="badge badge-danger">❌ Sin inventario</span>
-                            {% endfor %}
                         </td>
                         <td>
                             <form method="POST" action="{% url 'asignar_inventario' %}" style="display: inline-block;">
