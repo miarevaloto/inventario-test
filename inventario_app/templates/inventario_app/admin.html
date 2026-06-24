@@ -67,6 +67,7 @@
         .badge-success { background: #d4edda; color: #155724; }
         .badge-danger { background: #f8d7da; color: #721c24; }
         .badge-warning { background: #fff3cd; color: #856404; }
+        .badge-info { background: #d1ecf1; color: #0c5460; }
     </style>
 </head>
 <body>
@@ -119,7 +120,7 @@
                         </td>
                         <td>
                             {% for perfil in u.perfil_set.all %}
-                                <span class="badge badge-success">📦 {{ perfil.inventario.nombre }}</span>
+                                <span class="badge badge-info">📦 {{ perfil.inventario.nombre }}</span>
                             {% empty %}
                                 <span class="badge badge-danger">❌ Sin inventario</span>
                             {% endfor %}
@@ -151,7 +152,7 @@
         <!-- ============================================================ -->
         <div class="card">
             <h2>➕ Crear Usuario</h2>
-            <form method="POST" action="{% url 'crear_usuario_admin' %}">
+            <form method="POST" action="{% url 'crear_usuario_admin' %}" id="formCrearUsuario">
                 {% csrf_token %}
                 <input type="email" name="email" placeholder="Correo" required>
                 <input type="password" name="password" placeholder="Contraseña" required>
@@ -160,14 +161,16 @@
                     <option value="usuario">Usuario</option>
                     <option value="admin">Admin</option>
                 </select>
-                <select name="inventario_id" required>
+                <select name="inventario_id" id="inventarioSelect" onchange="toggleNuevoInventario()" required>
                     <option value="">Seleccione inventario</option>
                     {% for inv in inventarios %}
                         <option value="{{ inv.id }}">{{ inv.nombre }}</option>
                     {% endfor %}
                     <option value="nuevo">➕ Nuevo inventario</option>
                 </select>
-                <input type="text" name="nuevo_inventario" placeholder="Nombre del nuevo inventario" style="display:none;">
+                <input type="text" id="nuevoInventario" name="nuevo_inventario" 
+                       placeholder="Nombre del nuevo inventario" 
+                       style="display:none; margin-top: 10px;">
                 <button class="btn btn-primary">Crear Usuario</button>
             </form>
         </div>
@@ -199,15 +202,10 @@
                             {% endfor %}
                         </td>
                         <td>
-                            <!-- Botón Modificar -->
                             <button onclick="abrirModalModificar({{ inv.id }}, '{{ inv.nombre }}')" 
                                     class="btn-xs btn-warning">✏️ Modificar</button>
-                            
-                            <!-- Botón Asignar Usuario -->
                             <button onclick="abrirModalAsignar({{ inv.id }}, '{{ inv.nombre }}')" 
                                     class="btn-xs btn-primary">👤 Asignar</button>
-                            
-                            <!-- Botón Eliminar -->
                             <button onclick="abrirModalEliminar({{ inv.id }}, '{{ inv.nombre }}')" 
                                     class="btn-xs btn-danger">🗑️ Eliminar</button>
                         </td>
@@ -298,7 +296,27 @@
     <!-- SCRIPTS                                                         -->
     <!-- ============================================================ -->
     <script>
-        // Funciones para abrir modales
+        // ============================================================
+        // FUNCIÓN PARA MOSTRAR/OCULTAR CAMPO DE NUEVO INVENTARIO
+        // ============================================================
+        function toggleNuevoInventario() {
+            const select = document.getElementById('inventarioSelect');
+            const nuevoInput = document.getElementById('nuevoInventario');
+            
+            if (select.value === 'nuevo') {
+                nuevoInput.style.display = 'block';
+                nuevoInput.required = true;
+                nuevoInput.focus();
+            } else {
+                nuevoInput.style.display = 'none';
+                nuevoInput.required = false;
+                nuevoInput.value = '';
+            }
+        }
+
+        // ============================================================
+        // FUNCIONES PARA MODALES
+        // ============================================================
         function abrirModalModificar(id, nombre) {
             document.getElementById("modalModificar").style.display = "flex";
             document.getElementById("idInventarioModificar").value = id;
@@ -332,15 +350,24 @@
             if (event.target === modEliminar) cerrarModal("modalEliminar");
         }
 
-        // Mostrar/ocultar campo de nuevo inventario en crear usuario
-        document.querySelector('select[name="inventario_id"]')?.addEventListener('change', function() {
-            const nuevoInput = document.querySelector('input[name="nuevo_inventario"]');
-            if (this.value === "nuevo") {
-                nuevoInput.style.display = "block";
-                nuevoInput.required = true;
-            } else {
-                nuevoInput.style.display = "none";
-                nuevoInput.required = false;
+        // ============================================================
+        // VALIDACIÓN DEL FORMULARIO AL ENVIAR
+        // ============================================================
+        document.addEventListener('DOMContentLoaded', function() {
+            const form = document.getElementById('formCrearUsuario');
+            if (form) {
+                form.addEventListener('submit', function(e) {
+                    const select = document.getElementById('inventarioSelect');
+                    const nuevoInput = document.getElementById('nuevoInventario');
+                    
+                    // Si seleccionó "nuevo" pero no escribió nombre
+                    if (select.value === 'nuevo' && nuevoInput.value.trim() === '') {
+                        e.preventDefault();
+                        alert('❌ Por favor ingresa un nombre para el nuevo inventario');
+                        nuevoInput.focus();
+                        return false;
+                    }
+                });
             }
         });
     </script>
