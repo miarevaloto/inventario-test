@@ -396,8 +396,10 @@ def crear_usuario_admin(request):
                 user.is_staff = True
                 user.save()
             
+            # ✅ MANEJAR NUEVO INVENTARIO
             if inventario_id == 'nuevo' and nuevo_inventario:
                 inventario = Inventario.objects.create(nombre=nuevo_inventario)
+                messages.info(request, f'✅ Inventario "{nuevo_inventario}" creado')
             elif inventario_id and inventario_id != 'nuevo':
                 inventario = Inventario.objects.get(id=inventario_id)
             else:
@@ -405,7 +407,7 @@ def crear_usuario_admin(request):
             
             UsuarioInventario.objects.create(usuario=user, inventario=inventario)
             
-            messages.success(request, f'✅ Usuario {email} creado exitosamente')
+            messages.success(request, f'✅ Usuario {email} creado exitosamente con inventario "{inventario.nombre}"')
         except Exception as e:
             messages.error(request, f'❌ Error: {str(e)}')
     
