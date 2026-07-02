@@ -234,6 +234,7 @@ Una vez que el servicio esté activo (`Live`), visita las siguientes rutas en or
 1. **Crear base de administración:** `https://onrender.com`
 2. **Iniciar sesión en la plataforma:** `https://onrender.com`
 3. **Poblar las tiendas y catálogos:** `https://onrender.com`
+4. **URL de la aplicación:** `https://inventario-test.onrender.com/`
 
 ---
 
